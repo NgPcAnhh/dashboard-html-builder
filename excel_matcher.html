@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>So Sánh & Nhận Xét Lệch Format Excel - Data Tool</title>
+
+  <!-- CSS Giao Diện Matcher & Theme MB Bank -->
+  <link rel="stylesheet" href="css/excel-matcher.css">
+  <link rel="stylesheet" href="css/theme.css">
+
+  <!-- Thư viện SheetJS -->
+  <script src="js/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Dữ liệu JSON & JSON Storage Engine -->
+  <script src="data/storage.js"></script>
+  <script src="js/json-storage.js"></script>
+
+  <!-- Khởi tạo Theme sớm -->
+  <script src="js/theme.js"></script>
+</head>
+
+<body>
+
+  <!-- TOP NAVBAR -->
+  <nav class="top-navbar">
+    <div class="nav-left">
+      <a href="index.html" class="btn-nav-back" title="Quay lại Màn hình Quản lý Tools">
+        🏠 Quản lý Tools
+      </a>
+      <div class="nav-brand">
+        <div class="nav-brand-logo">🔍</div>
+        <span class="nav-brand-title">Kiểm Tra Đối Soát Format 2 File Excel</span>
+      </div>
+    </div>
+    <div class="nav-right" style="display: flex; align-items: center; gap: 10px;">
+      <button class="btn-theme-toggle" id="themeToggleBtn" title="Chuyển nhanh Giao diện Sáng / Tối">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-text">Dark Mode</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="matcher-container">
+
+    <!-- HERO HEADER -->
+    <header class="matcher-header">
+      <h1>⚡ So Sánh & Nhận Xét Lệch Format 2 File Excel</h1>
+      <p>
+        Tải lên <b>File Mẫu Chuẩn</b> và <b>File Gửi Mới</b> để kiểm tra cấu trúc format (không so sánh trùng lặp dữ liệu giữa 2 kỳ). Hệ thống sẽ phát hiện các lỗi đảo cột, lệch dòng tiêu đề, sai tên trường, khoảng trắng thừa, lỗi công thức và <b>tạo sẵn bản tóm tắt ngắn gọn để copy gửi yêu cầu đầu mối sửa</b>.
+      </p>
+    </header>
+
+    <!-- DUAL UPLOAD SECTION -->
+    <section class="upload-grid">
+
+      <!-- KHỐI 1: FILE MẪU CHUẨN (TEMPLATE) -->
+      <div class="upload-card" id="cardTemplate">
+        <div class="upload-card-header">
+          <div class="upload-card-title">
+            <span>📋 File 1: File Mẫu Chuẩn (Template)</span>
+          </div>
+          <span class="upload-tag template">Format Mục Tiêu</span>
+        </div>
+
+        <!-- Dropzone nạp file mẫu -->
+        <div class="dropzone" id="tplDropzone">
+          <div class="dropzone-icon">📁</div>
+          <div class="dropzone-text">Kéo thả file Mẫu chuẩn (.xlsx, .csv) vào đây</div>
+          <div class="dropzone-sub">hoặc click để duyệt chọn từ máy tính</div>
+        </div>
+        <input type="file" id="tplFileInput" accept=".xlsx, .xls, .csv" style="display: none;" />
+
+        <!-- Thông tin file mẫu sau khi nạp -->
+        <div class="file-meta-box" id="tplMetaBox">
+          <div class="file-meta-top">
+            <span class="file-name-display" id="tplFileName">template.xlsx</span>
+            <button class="btn-remove-file" id="tplBtnRemove" title="Đổi file khác">✕ Đổi file</button>
+          </div>
+          <div class="file-controls-row">
+            <label>Sheet:
+              <select class="select-control" id="tplSheetSelect"></select>
+            </label>
+            <label>Dòng tiêu đề:
+              <select class="select-control" id="tplHeaderRowSelect"></select>
+            </label>
+          </div>
+          <div class="stat-pills-row" id="tplStats"></div>
+        </div>
+      </div>
+
+      <!-- KHỐI 2: FILE GỬI MỚI (INCOMING / RAW SUBMISSION) -->
+      <div class="upload-card" id="cardRaw">
+        <div class="upload-card-header">
+          <div class="upload-card-title">
+            <span>📥 File 2: File Gửi Mới (Kỳ Này Cần So Sánh)</span>
+          </div>
+          <span class="upload-tag raw">Dữ Liệu Mới</span>
+        </div>
+
+        <!-- Dropzone nạp file mới -->
+        <div class="dropzone" id="rawDropzone">
+          <div class="dropzone-icon">📤</div>
+          <div class="dropzone-text">Kéo thả file Gửi mới (.xlsx, .csv) vào đây</div>
+          <div class="dropzone-sub">hoặc click để duyệt chọn từ máy tính</div>
+        </div>
+        <input type="file" id="rawFileInput" accept=".xlsx, .xls, .csv" style="display: none;" />
+
+        <!-- Thông tin file mới sau khi nạp -->
+        <div class="file-meta-box" id="rawMetaBox">
+          <div class="file-meta-top">
+            <span class="file-name-display" id="rawFileName">submission.xlsx</span>
+            <button class="btn-remove-file" id="rawBtnRemove" title="Đổi file khác">✕ Đổi file</button>
+          </div>
+          <div class="file-controls-row">
+            <label>Sheet:
+              <select class="select-control" id="rawSheetSelect"></select>
+            </label>
+            <label>Dòng tiêu đề:
+              <select class="select-control" id="rawHeaderRowSelect"></select>
+            </label>
+          </div>
+          <div class="stat-pills-row" id="rawStats"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- CẤU HÌNH CÁC PHÉP KIỂM TRA MẪU (CHECKLIST PHÂN NHÓM) -->
+    <section class="checks-config-card">
+      <div class="checks-header">
+        <div class="checks-title">
+          <span>⚙️ Chọn Các Phép Kiểm Định Cần Thực Hiện</span>
+        </div>
+        <div class="checks-quick-actions">
+          <button class="btn-check-preset" id="btnSelectAllChecks">✓ Chọn tất cả</button>
+          <button class="btn-check-preset" id="btnDeselectAllChecks">✕ Bỏ chọn tất cả</button>
+          <button class="btn-check-preset" id="btnDefaultChecks">⭐ Mặc định khuyên dùng</button>
+        </div>
+      </div>
+
+      <!-- NHÓM 1: CẤU TRÚC BẢNG & DÒNG TIÊU ĐỀ -->
+      <div class="checks-category-group">
+        <div class="checks-group-label">📁 1. Cấu Trúc Bảng & Vị Trí Cột</div>
+        <div class="checks-grid">
+          <!-- Phép 1: Lệch dòng tiêu đề -->
+          <label class="check-item-card checked" for="chkHeaderOffset">
+            <input type="checkbox" id="chkHeaderOffset" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">📍 Tiêu đề bị thụt lùi / Chèn banner phía trên</div>
+              <div class="check-desc">Kiểm tra xem người gửi có chèn thêm các dòng trống, tên báo cáo ở đầu file làm trôi dòng header thật xuống không.</div>
+            </div>
+          </label>
+
+          <!-- Phép 2: Đồng nhất danh sách cột -->
+          <label class="check-item-card checked" for="chkHeaderMatch">
+            <input type="checkbox" id="chkHeaderMatch" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">📋 Đồng nhất danh sách cột (Thiếu / Thừa cột)</div>
+              <div class="check-desc">Tìm ra các cột bị thiếu trong file mới (nguy cơ mất dữ liệu) hoặc các cột thừa ngoài mẫu quy chuẩn.</div>
+            </div>
+          </label>
+
+          <!-- Phép 3: Đảo thứ tự cột -->
+          <label class="check-item-card checked" for="chkColumnOrder">
+            <input type="checkbox" id="chkColumnOrder" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">🔄 Đảo thứ tự cột (Trùng cột nhưng sai vị trí)</div>
+              <div class="check-desc">Kiểm tra xem kỳ này có gửi trùng cột nhưng xáo trộn vị trí cột không (ví dụ Cột A nhảy sang Cột H).</div>
+            </div>
+          </label>
+
+          <!-- Phép 4: Cột trống vô danh -->
+          <label class="check-item-card checked" for="chkEmptyCols">
+            <input type="checkbox" id="chkEmptyCols" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">🗑️ Cột trống vô danh (Blank / Unnamed Columns)</div>
+              <div class="check-desc">Phát hiện các cột rỗng không có tên do người dùng xóa dữ liệu nhưng quên xóa cột Excel.</div>
+            </div>
+          </label>
+
+          <!-- Phép 5: Tên Sheet -->
+          <label class="check-item-card checked" for="chkSheetName">
+            <input type="checkbox" id="chkSheetName" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">📑 Kiểm tra tên Sheet / Trang tính chuẩn</div>
+              <div class="check-desc">Kiểm tra xem tên sheet trong file mới có khớp với tên sheet của mẫu quy định hay bị đổi tên lạ.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- NHÓM 2: TÊN TIÊU ĐỀ & KÝ TỰ -->
+      <div class="checks-category-group">
+        <div class="checks-group-label">🔤 2. Tên Tiêu Đề & Ký Tự</div>
+        <div class="checks-grid">
+          <!-- Phép 6: Sai tên trường / Viết tắt -->
+          <label class="check-item-card checked" for="chkFuzzyNames">
+            <input type="checkbox" id="chkFuzzyNames" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">🔤 Sai tên trường, viết tắt, không dấu</div>
+              <div class="check-desc">Bắt lỗi chính tả, viết tắt nghiệp vụ (SĐT ↔ Số điện thoại, Ma_NV ↔ Mã nhân viên, Doanh thu ↔ Doanh số).</div>
+            </div>
+          </label>
+
+          <!-- Phép 7: Khoảng trắng thừa ở tiêu đề -->
+          <label class="check-item-card checked" for="chkHeaderWhitespace">
+            <input type="checkbox" id="chkHeaderWhitespace" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">␣ Khoảng trắng thừa ở đầu/cuối tiêu đề</div>
+              <div class="check-desc">Phát hiện dấu cách thừa ở đầu hoặc cuối tên cột (vd: " Mã NV ") khiến hàm tìm kiếm và import bị lỗi.</div>
+            </div>
+          </label>
+
+          <!-- Phép 8: Xuống dòng trong tiêu đề -->
+          <label class="check-item-card checked" for="chkHeaderLineBreaks">
+            <input type="checkbox" id="chkHeaderLineBreaks" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">↵ Xuống dòng (Alt+Enter) & ký tự lạ trong tiêu đề</div>
+              <div class="check-desc">Phát hiện tiêu đề chứa ký tự ngắt dòng (\n), tab hoặc ký tự đặc biệt gây vỡ định dạng CSV/SQL.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- NHÓM 3: CHẤT LƯỢNG ĐỊNH DẠNG DỮ LIỆU KỲ MỚI -->
+      <div class="checks-category-group">
+        <div class="checks-group-label">🔢 3. Định Dạng & Độ Sạch Của Dữ Liệu Kỳ Mới</div>
+        <div class="checks-grid">
+          <!-- Phép 9: Số lưu dạng text -->
+          <label class="check-item-card checked" for="chkDataTypes">
+            <input type="checkbox" id="chkDataTypes" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">🔢 Cột số bị lưu dạng text / Chuỗi ký tự</div>
+              <div class="check-desc">Kiểm tra xem cột số, tiền tệ ở file mới có bị gõ nhầm chữ hoặc lưu dạng text không tính toán được.</div>
+            </div>
+          </label>
+
+          <!-- Phép 10: Lỗi công thức Excel -->
+          <label class="check-item-card checked" for="chkFormulaErrors">
+            <input type="checkbox" id="chkFormulaErrors" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">⚠️ Tồn tại lỗi công thức (#REF!, #VALUE!, #N/A)</div>
+              <div class="check-desc">Quét các ô chứa lỗi công thức Excel chưa được xử lý hoặc copy-paste values trước khi gửi.</div>
+            </div>
+          </label>
+
+          <!-- Phép 11: Ô trống bất thường -->
+          <label class="check-item-card checked" for="chkNullRate">
+            <input type="checkbox" id="chkNullRate" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">📉 Ô trống bất thường (Tỷ lệ Blank / Null cao)</div>
+              <div class="check-desc">Cảnh báo nếu các cột ở file mới có tỷ lệ rỗng cao bất thường (>30%) so với thông thường.</div>
+            </div>
+          </label>
+
+          <!-- Phép 12: Trùng lặp khóa chính -->
+          <label class="check-item-card checked" for="chkDuplicateKeys">
+            <input type="checkbox" id="chkDuplicateKeys" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">🆔 Trùng lặp mã định danh (Duplicate Key) trong kỳ mới</div>
+              <div class="check-desc">Tự phát hiện cột Mã/ID và kiểm tra xem kỳ mới có bản ghi nào bị gửi trùng lặp 2 lần không.</div>
+            </div>
+          </label>
+
+          <!-- Phép 13: Dòng trống xen kẽ -->
+          <label class="check-item-card checked" for="chkInterleavedBlankRows">
+            <input type="checkbox" id="chkInterleavedBlankRows" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">⏸️ Dòng hoàn toàn trống xen kẽ giữa bảng</div>
+              <div class="check-desc">Phát hiện các dòng trống ngắt quãng bảng tính gây lỗi ngắt dữ liệu khi đọc file tự động.</div>
+            </div>
+          </label>
+
+          <!-- Phép 14: Định dạng ngày tháng -->
+          <label class="check-item-card checked" for="chkDateFormats">
+            <input type="checkbox" id="chkDateFormats" class="check-checkbox" checked />
+            <div class="check-content">
+              <div class="check-name">📅 Định dạng ngày tháng (Date Pattern Anomaly)</div>
+              <div class="check-desc">Phát hiện sự không đồng nhất giữa định dạng ngày DD/MM/YYYY, MM/DD/YYYY hoặc chuỗi ngày lạ.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Nút Thực hiện So sánh -->
+      <div class="action-run-bar">
+        <span class="checks-summary-counter" id="checksCounter">Đã chọn 14 / 14 phép kiểm tra</span>
+        <button class="btn-run-comparison" id="btnRunComparison" disabled>
+          <span>🔍 Thực Hiện So Sánh & Đưa Ra Nhận Xét</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- KẾT QUẢ: KHUNG NHẬN XÉT CHI TIẾT, PROMPT COPY & 2 Ô XEM TRƯỚC 2 FILE EXCEL -->
+    <section class="results-section" id="resultsSection">
+
+      <!-- KHỐI 1: SYSTEM PROMPT CHUẨN HÓA SCHEMA & YÊU CẦU SỬA (COPY 1-CLICK) -->
+      <div class="prompt-feedback-card">
+        <div class="prompt-card-header">
+          <div>
+            <div class="prompt-card-title">
+              <span>📋 Danh Sách Hạng Mục Cần Xử Lý (Prompt / Gửi Đầu Mối)</span>
+            </div>
+            <div class="prompt-card-desc">
+              Chỉ rõ trực tiếp những điểm cần xử lý (vị trí dòng, thêm/xóa cột, đảo thứ tự cột, sửa tên trường, định dạng) không rườm rà.
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="prompt-mode-tabs">
+              <button class="btn-prompt-mode active" id="btnModeSystemPrompt" type="button" title="System Prompt kỹ thuật chặt chẽ cho AI / Script">
+                🤖 System Prompt (Cho AI)
+              </button>
+              <button class="btn-prompt-mode" id="btnModeHumanMsg" type="button" title="Tin nhắn tóm tắt ngắn gọn gửi cho đầu mối">
+                ✉️ Tin Nhắn (Đầu Mối)
+              </button>
+            </div>
+            <button class="btn-copy-prompt" id="btnCopyPrompt" title="Copy toàn bộ nội dung prompt vào Clipboard">
+              <span>📋 Copy Prompt</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Khung Textarea cho phép xem và trực tiếp gõ/sửa nếu muốn -->
+        <textarea class="prompt-text-box" id="promptTextBox" rows="10" spellcheck="false" placeholder="Đang tạo danh sách hạng mục cần xử lý..."></textarea>
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--text-dim); margin-top: 2px;">
+          <span>💡 Bạn có thể trực tiếp chỉnh sửa hoặc thêm ghi chú vào khung trên trước khi bấm Copy.</span>
+          <span id="promptCharCount">0 ký tự</span>
+        </div>
+      </div>
+
+      <!-- KHỐI 2: BẢNG NHẬN XÉT CHI TIẾT THEO TỪNG TIÊU CHÍ -->
+      <div class="remarks-card">
+        <div class="remarks-header">
+          <h3>📝 Bảng Nhận Xét Chi Tiết Theo Từng Tiêu Chí</h3>
+          <button class="btn-clean-export" id="btnExportCleanExcel" title="Tải file Excel đã được tự động chuẩn hóa về đúng format mẫu">
+            📥 Xuất File Đã Chuẩn Hóa Theo Mẫu (.xlsx)
+          </button>
+        </div>
+
+        <!-- Banner kết luận tổng quan -->
+        <div class="executive-summary-banner" id="summaryBanner">
+          <div class="summary-banner-icon" id="summaryBannerIcon">ℹ️</div>
+          <div class="summary-banner-content">
+            <h4 id="summaryBannerTitle">Đang phân tích...</h4>
+            <p id="summaryBannerDesc">Vui lòng chờ giây lát...</p>
+          </div>
+        </div>
+
+        <!-- Danh sách nhận xét theo từng phép so sánh -->
+        <div class="remarks-list" id="remarksList">
+          <!-- Render từ JavaScript -->
+        </div>
+      </div>
+
+      <!-- KHỐI 3: 2 Ô HIỂN THỊ 2 FILE EXCEL SONG SONG ĐỂ NGƯỜI DÙNG NHÌN QUA -->
+      <div class="preview-comparison-section">
+        <div class="preview-section-title">
+          <span>👀 Đối Chiếu Trực Quan 2 File Excel (Nhìn Qua Cấu Trúc)</span>
+          <span style="font-size: 12px; color: var(--text-dim); font-weight: 500;">
+            Cuộn ngang/dọc từng ô để so sánh tiêu đề và dữ liệu thực tế
+          </span>
+        </div>
+
+        <div class="excel-views-grid">
+          <!-- Ô BÊN TRÁI: FILE MẪU CHUẨN -->
+          <div class="excel-view-box">
+            <div class="excel-view-header">
+               <span>📋 File 1: Dữ Liệu Mẫu Chuẩn (Target Format)</span>
+               <span class="excel-file-badge" id="tplViewBadge">0 dòng x 0 cột</span>
+            </div>
+            <div class="excel-table-scroll" id="tplTableScroll">
+              <div class="excel-empty-notice">Chưa có dữ liệu File Mẫu</div>
+            </div>
+          </div>
+
+          <!-- Ô BÊN PHẢI: FILE GỬI MỚI -->
+          <div class="excel-view-box">
+            <div class="excel-view-header">
+               <span>📥 File 2: Dữ Liệu Gửi Mới (Incoming Submission)</span>
+               <span class="excel-file-badge" id="rawViewBadge">0 dòng x 0 cột</span>
+            </div>
+            <div class="excel-table-scroll" id="rawTableScroll">
+              <div class="excel-empty-notice">Chưa có dữ liệu File Mới</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- TOAST FEEDBACK CHO COPY -->
+  <div class="copy-toast" id="copyToast">
+    <span>✓</span>
+    <span id="copyToastMsg">Đã copy nội dung prompt vào Clipboard!</span>
+  </div>
+
+  <!-- JS ENGINE -->
+  <script src="js/excel-matcher.js"></script>
+
+</body>
+
+</html>

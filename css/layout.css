@@ -1,0 +1,194 @@
+/* ========================================================
+   BỐ CỤC CHÍNH 2 CỘT & THANH ĐIỀU CHỈNH KÍCH THƯỚC (RESIZER)
+   ======================================================== */
+.panel-left {
+  width: 50%;
+  min-width: 340px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 8px;
+  height: 100%;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.panel-right {
+  flex: 1;
+  min-width: 340px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 10px;
+  height: 100%;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+/* Thanh điều chỉnh kích thước giữa 2 bên (Trái / Phải) */
+.resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: #2d2d2d;
+  transition: background 0.2s;
+  position: relative;
+  flex-shrink: 0;
+  user-select: none;
+  z-index: 10;
+}
+
+.resizer:hover,
+.resizer.is-dragging {
+  background: #007acc;
+}
+
+.resizer::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 32px;
+  background: #555;
+  border-radius: 1px;
+}
+
+.resizer:hover::after,
+.resizer.is-dragging::after {
+  background: #fff;
+}
+
+/* Thanh resizer ngang kéo chia giữa Vùng Nguồn & Terminal */
+.resizer-horizontal {
+  height: 6px;
+  cursor: row-resize;
+  background: #252526;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  position: relative;
+  margin: 1px 0;
+  user-select: none;
+}
+
+.resizer-horizontal:hover,
+.resizer-horizontal.is-dragging {
+  background: #107c41;
+}
+
+.resizer-horizontal::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 2px;
+  background: #555;
+  border-radius: 1px;
+}
+
+.resizer-horizontal:hover::after,
+.resizer-horizontal.is-dragging::after {
+  background: #fff;
+}
+
+/* ========================================================
+   CONTAINER NGUỒN DỮ LIỆU NHIỀU FILE (BÊN PHẢI)
+   ======================================================== */
+.source-container {
+  background: #252526;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1.25;
+  min-height: 220px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.source-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.source-header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.source-tabs-nav {
+  display: inline-flex;
+  gap: 3px;
+  background: #181818;
+  padding: 2px;
+  border-radius: 4px;
+  border: 1px solid #383838;
+}
+
+.source-tab-btn {
+  background: transparent;
+  color: #999;
+  border: none;
+  padding: 3px 9px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+
+.source-tab-btn:hover {
+  color: #fff;
+  background: #28282b;
+}
+
+.source-tab-btn.active {
+  background: #107c41;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(16, 124, 65, 0.4);
+}
+
+.drop-zone {
+  border: 2px dashed #444;
+  border-radius: 6px;
+  padding: 16px 10px;
+  text-align: center;
+  background: #1e1e1e;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.drop-zone:hover {
+  border-color: #0e639c;
+  background: #222629;
+}
+
+.drop-zone.dragover {
+  border-color: #007acc;
+  background: #2a2d2e;
+  transform: scale(0.99);
+}
+
+.drop-zone p {
+  font-size: 11px;
+  color: #bbb;
+  pointer-events: none;
+  line-height: 1.4;
+}

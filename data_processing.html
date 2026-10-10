@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Excel & CSV Data Terminal - VS Code Engine (Multi-File & Multi-Script)</title>
+  
+  <!-- CSS Module Chính (kết hợp các file base, layout, editor, inline-excel, terminal, modal) & Theme MB Bank -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/theme.css">
+
+  <!-- Thư viện SheetJS (Cục bộ offline + Fallback CDN) -->
+  <script src="js/xlsx.full.min.js"></script>
+  <script src="xlsx.full.min.js"></script>
+  <script src="../xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Dữ liệu JSON & JSON Storage Engine -->
+  <script src="data/storage.js"></script>
+  <script src="js/json-storage.js"></script>
+
+  <!-- Khởi tạo Theme sớm -->
+  <script src="js/theme.js"></script>
+</head>
+
+<body>
+
+  <!-- BÊN TRÁI: CODE XỬ LÝ (HỖ TRỢ NHIỀU TAB FILE JS) -->
+  <div class="panel-left" id="panelLeft">
+    <div class="toolbar">
+      <a href="index.html" style="text-decoration:none; background:#2d3748; color:#e2e8f0; padding:5px 10px; border-radius:4px; font-size:11px; font-weight:bold; display:inline-flex; align-items:center; gap:4px; border:1px solid rgba(255,255,255,0.15); transition: 0.2s;" onmouseover="this.style.background='#3b82f6';this.style.color='#fff';" onmouseout="this.style.background='#2d3748';this.style.color='#e2e8f0';" title="Về Màn hình Quản lý Tools">🏠 Quản lý Tools</a>
+      <button class="btn-theme-toggle" id="themeToggleBtn" title="Chuyển nhanh Giao diện Sáng / Tối" style="padding: 3px 8px; font-size: 11px;">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-text">Dark Mode</span>
+      </button>
+      <h2>Mã Nguồn JS</h2>
+      <button class="btn-run" id="btnRun">▶ Chạy script</button>
+      <button class="btn-format" id="btnFormatCode" title="Căn chỉnh thụt lề code tự động (Phím tắt: Shift + Alt + F)">✨ Format Code</button>
+      <button class="btn-prompt" id="btnOpenPrompt">✨ Prompt AI</button>
+      <button class="btn-save-dir" id="btnSaveToFolder">💾 Lưu JS</button>
+      <button id="btnLoadJs" title="Tự động mở thư mục data_processing_template để nạp file JS">📂 Nạp .js</button>
+      <input type="file" id="jsFileInput" accept=".js" multiple style="display:none;" />
+    </div>
+
+    <!-- THANH TABS QUẢN LÝ NHIỀU FILE JS -->
+    <div class="tabs-header-wrapper">
+      <div class="tabs-bar" id="tabsBar"></div>
+      <button class="btn-add-tab" id="btnAddTab" title="Thêm file script mới">+</button>
+    </div>
+
+    <!-- KHUNG CODE EDITOR SỐ DÒNG & HIGHLIGHT CÚ PHÁP -->
+    <div class="editor-wrapper">
+      <div class="line-numbers" id="lineNumbers">1</div>
+      <div class="code-container">
+        <textarea id="codeEditor" spellcheck="false"></textarea>
+        <pre><code id="codeHighlight"></code></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- THANH KÉO TÙY CHỈNH KÍCH THƯỚC GIỮA 2 BÊN -->
+  <div class="resizer" id="dragResizer" title="Kéo chuột để tùy chỉnh kích thước 2 bên (Nhấp đúp để chia đều 50/50)">
+  </div>
+
+  <!-- BÊN PHẢI: NGUỒN DỮ LIỆU NHIỀU FILE (TRÊN) & TERMINAL (DƯỚI) -->
+  <div class="panel-right" id="panelRight">
+    <!-- KHỐI 1: NGUỒN DỮ LIỆU EXCEL / CSV & BẢNG MÔ PHỎNG EXCEL (TRỰC TIẾP TRÊN TERMINAL) -->
+    <div class="source-container" id="sourceContainer">
+      <div class="source-header">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <h2>1. Nguồn Dữ Liệu</h2>
+          <!-- Nút chuyển đổi qua lại giữa Nạp file và Mô phỏng Excel -->
+          <div class="source-tabs-nav">
+            <button class="source-tab-btn" id="btnTabFileMode" type="button"
+              title="Kéo thả hoặc chọn file từ máy tính">📂 File từ máy</button>
+            <button class="source-tab-btn active" id="btnTabMockMode" type="button"
+              title="Bảng tính mô phỏng Excel trực tiếp & dán từ bên ngoài">📊 Mô phỏng Excel & Paste</button>
+          </div>
+        </div>
+
+        <div class="source-header-actions">
+          <button class="btn-use-mock" id="btnUseMockData" type="button"
+            title="Bật tính năng này để code tự động trỏ vào bảng tính mô phỏng và xử lý như file Excel thông thường">
+            ⚡ Dùng data này
+          </button>
+          <span id="badgeLoaded" class="badge-status" style="display: none;">0 file</span>
+          <button class="btn-clear" id="btnClearFiles" style="padding: 2px 7px; font-size: 10px; display: none;">Xóa tất
+            cả</button>
+        </div>
+      </div>
+
+      <!-- VIEW 1: NẠP FILE TỪ MÁY TÍNH -->
+      <div id="sourceFileView" style="display: none; flex-direction: column; gap: 8px;">
+        <div class="drop-zone" id="dropZone" style="padding: 16px 10px;">
+          <p>📂 Kéo & thả <b>file .xlsx, .csv</b> vào đây<br><small style="color: #888;">(hoặc click để chọn từ máy
+              tính)</small></p>
+        </div>
+        <input type="file" id="fileInput"
+          accept=".xlsx, .xls, .csv, text/csv, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple style="display: none;" />
+      </div>
+
+      <!-- VIEW 2: BẢNG TÍNH MÔ PHỎNG EXCEL (MẶC ĐỊNH HIỂN THỊ TRỰC TIẾP) -->
+      <div id="sourceMockView" class="inline-excel-wrapper">
+        <div class="inline-excel-toolbar">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <input type="text" id="inlineFileNameInput" value="mock_data.xlsx" class="inline-excel-input"
+              style="width: 130px;" placeholder="mock_data.xlsx" title="Tên file Excel khi đẩy lên hệ thống" />
+            <input type="text" id="inlineSheetNameInput" value="Sheet1" class="inline-excel-input" style="width: 65px;"
+              placeholder="Sheet1" title="Tên Sheet" />
+            <span id="inlineStatsText" style="font-size: 11px; color: #4ec9b0; font-family: monospace;">0 dòng, 0
+              cột</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
+            <button type="button" class="inline-excel-btn" id="btnInlinePaste" style="color: #4ec9b0; font-weight: 600;"
+              title="Dán dữ liệu từ Clipboard / Excel ngoài máy vào bảng tính (hoặc bấm vào ô trong bảng rồi ấn Ctrl+V)">
+              📋 Dán từ Excel / CSV
+            </button>
+            <button type="button" class="inline-excel-btn" id="btnToggleFirstRowHeader"
+              title="Chuyển đổi: Lấy dòng 1 làm Tên Cột hoặc Đặt lại cột theo chuẩn A, B, C...">
+              🏷️ Dòng 1 ⇄ Header
+            </button>
+            <button type="button" class="inline-excel-btn" id="btnInlineAddRow"
+              title="Thêm một dòng mới (tự động tăng dần 1, 2, 3...)">+ Dòng</button>
+            <button type="button" class="inline-excel-btn" id="btnInlineAddCol"
+              title="Thêm một cột mới (tự động tăng dần A, B, C... AA, AB...)">+ Cột</button>
+            <button type="button" class="inline-excel-btn" id="btnInlineDelCol"
+              title="Xóa bớt cột cuối cùng">- Cột</button>
+            <button type="button" class="inline-excel-btn btn-danger-clean" id="btnInlineClear"
+              title="Xóa trắng bảng tính">🧹 Xóa</button>
+          </div>
+        </div>
+
+        <!-- BẢNG TÍNH MÔ PHỎNG EXCEL VIEWPORT -->
+        <div class="inline-excel-viewport" id="inlineExcelViewport" tabindex="0"
+          title="Nhấp vào bảng rồi ấn Ctrl+V để dán dữ liệu từ Excel ngoài máy vào đây">
+          <table class="inline-excel-table" id="inlineExcelTable">
+            <thead id="inlineExcelHead"></thead>
+            <tbody id="inlineExcelBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- DANH SÁCH FILE ĐÃ NẠP (HIỂN THỊ CHUNG) -->
+      <div class="files-list-wrapper" id="filesListWrapper" style="display: none;">
+        <div class="files-list-header">
+          <span>DANH SÁCH FILE ĐÃ NẠP (Gọi trực tiếp bất kỳ file nào qua <code>files['tên_file']</code> hoặc <code>getFile()</code>):</span>
+          <span id="totalStats" style="color: #4ec9b0; font-weight: bold;"></span>
+        </div>
+        <div class="files-list" id="filesList"></div>
+      </div>
+    </div>
+
+    <!-- THANH KÉO ĐIỀU CHỈNH KÍCH THƯỚC GIỮA BẢNG EXCEL & TERMINAL -->
+    <div class="resizer-horizontal" id="dragResizerRight"
+      title="Kéo chuột để tùy chỉnh kích thước giữa Bảng tính Excel và Terminal"></div>
+
+    <!-- KHỐI 2: TERMINAL MONITOR NẰM DƯỚI -->
+    <div class="terminal-container" id="terminalContainer">
+      <div class="terminal-header">
+        <span>CONSOLE / TERMINAL MONITOR</span>
+        <button class="btn-clear" id="btnClearTerm" style="padding: 2px 6px;">Xóa màn hình</button>
+      </div>
+      <div id="terminal">> Sẵn sàng...</div>
+    </div>
+  </div>
+
+  <!-- MODAL PROMPT GENERATOR VỚI CÁC Ô RIÊNG BIỆT -->
+  <div class="modal-overlay" id="promptModal">
+    <div class="modal">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 8px;">
+        <h3 style="margin: 0; color: #4ec9b0;">✨ Trình Tạo Prompt AI Xử Lý Dữ Liệu</h3>
+        <button class="btn-clear" id="btnCloseModalX" style="padding: 2px 8px; font-size: 14px;">✕</button>
+      </div>
+
+      <!-- Ô 1: MÔ TẢ & CHỌN NGUỒN DỮ LIỆU ĐẦU VÀO -->
+      <div class="prompt-field-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+          <label for="inputDataDesc" style="margin-bottom: 0;">
+            <b style="color: #9cdcfe;">1. Mô tả Dữ liệu Đầu vào &amp; Chọn File Truyền Dữ Liệu Mẫu:</b>
+          </label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; color: #4ec9b0; font-size: 11px; font-weight: 600;">
+              <input type="checkbox" id="chkIncludeSampleData" checked />
+              Đính kèm dữ liệu mẫu vào Prompt AI
+            </label>
+          </div>
+        </div>
+
+        <!-- KHU VỰC CHỌN FILE EXCEL TRUYỀN DỮ LIỆU MẪU VÀO PROMPT (HỖ TRỢ ĐA FILE VÀ FILE MÔ PHỎNG) -->
+        <div class="prompt-source-picker" id="promptSourcePicker">
+          <div class="prompt-source-header">
+            <span style="font-size: 11px; color: #d4d4d4; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
+              📁 Chọn file truyền data mẫu (Có thể chọn nhiều file cùng lúc):
+            </span>
+            <div style="display: flex; gap: 5px;">
+              <button type="button" class="btn-picker-action" id="btnSelectAllPromptSources">Chọn tất cả</button>
+              <button type="button" class="btn-picker-action" id="btnUnselectAllPromptSources">Bỏ chọn hết</button>
+            </div>
+          </div>
+          <!-- Danh sách checkbox các nguồn file (Được sinh động bởi JS) -->
+          <div class="prompt-sources-list" id="promptSourcesList">
+            <!-- Render động từ JS: Bảng mô phỏng Excel, File tải lên 1, File tải lên 2... -->
+          </div>
+        </div>
+
+        <textarea id="inputDataDesc" style="height: 50px; resize: vertical;"
+          placeholder="Ghi chú thêm về dữ liệu (tùy chọn): ví dụ cột 'Mã Đơn' khớp với cột 'ID', định dạng ngày dd/mm/yyyy..."></textarea>
+
+        <!-- Khung xem trước Mock Data đã che mờ 75% -->
+        <div id="mockPreviewContainer"
+          style="background: #1c1c1f; border: 1px solid #333; border-radius: 4px; padding: 6px 10px; font-size: 11px;">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;"
+            id="toggleMockPreview">
+            <span style="color: #4ec9b0; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
+              <span>🎭</span> Xem trước Data mẫu sẽ gửi cho AI (<span id="previewFilesCount">0</span> file được chọn)
+            </span>
+            <span id="mockPreviewBadge" style="color: #007acc; font-size: 11px; font-weight: bold;">▼ Mở bảng xem</span>
+          </div>
+          <div id="mockPreviewContent"
+            style="display: none; margin-top: 8px; max-height: 150px; overflow: auto; border: 1px solid #2d2d2d; border-radius: 4px;">
+          </div>
+        </div>
+      </div>
+
+      <!-- Ô 2: XỬ LÝ NGHIỆP VỤ CỤ THỂ LÀ GÌ (BUSINESS LOGIC) -->
+      <div class="prompt-field-group">
+        <label for="businessLogicDesc">
+          <b style="color: #ce9178;">2. Xử lý Nghiệp vụ cụ thể là gì (Business Logic):</b>
+          <span style="color: #f48771; font-size: 11px; margin-left: 4px;">* Yêu cầu tính toán, lọc, gộp chính</span>
+        </label>
+        <textarea id="businessLogicDesc" style="height: 80px; resize: vertical;" placeholder="Ví dụ cụ thể:
+- Lọc các đơn có trạng thái 'Hoàn thành' và Doanh số > 500.000 đ.
+- Tính Lợi nhuận = Doanh số - (Số lượng * Giá vốn tra từ File 2).
+- Nhóm theo từng Tỉnh/Thành phố và tính tổng doanh thu, tổng đơn hàng..."></textarea>
+      </div>
+
+      <!-- Ô 3: ĐẦU RA & KẾT QUẢ MONG MUỐN (EXPECTED OUTPUT) -->
+      <div class="prompt-field-group">
+        <label for="outputDesc">
+          <b style="color: #dcdcaa;">3. Kết quả Đầu ra mong muốn (Expected Output):</b>
+          <span style="color: #888; font-size: 11px; margin-left: 4px;">(Tên file xuất, cột kết quả, in tóm tắt)</span>
+        </label>
+        <textarea id="outputDesc" style="height: 50px; resize: vertical;"
+          placeholder="Ví dụ: Xuất file Excel tên 'BaoCao_LoiNhuan_Q3.xlsx' gồm các cột: Tỉnh Thành, Số Đơn, Doanh Số, Lợi Nhuận. Đồng thời in bảng Top 5 tỉnh cao nhất ra console..."></textarea>
+      </div>
+
+      <!-- Tùy chọn nâng cao chất lượng code AI & Bảo mật dữ liệu -->
+      <div class="modal-options">
+        <label><input type="checkbox" id="chkMask75" checked> Che mờ 75% dữ liệu từng ô (Bảo mật cho AI)</label>
+        <label><input type="checkbox" id="chkCleanNum" checked> Ép kiểu số &amp; làm sạch tiền tệ an toàn</label>
+        <label><input type="checkbox" id="chkExport" checked> Tự động gọi exportExcel xuất file kết quả</label>
+        <label><input type="checkbox" id="chkSummaryTable" checked> In báo cáo console.log / console.table</label>
+        <label><input type="checkbox" id="chkJoinOpt" checked> Tối ưu Map/Hash Join (khi đa file)</label>
+      </div>
+
+      <!-- Ô 4: PROMPT HOÀN CHỈNH ĐỂ COPY -->
+      <div class="prompt-field-group">
+        <label for="fullPromptOutput"><b style="color: #4ec9b0;">4. Prompt hoàn chỉnh (Copy gửi cho ChatGPT, Claude,
+            Gemini hoặc DeepSeek):</b></label>
+        <textarea id="fullPromptOutput" readonly spellcheck="false"
+          style="height: 160px; font-family: Consolas, monospace; font-size: 11px; color: #9cdcfe; background: #181818; resize: vertical;"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-clear" id="btnCloseModal">Đóng</button>
+        <button id="btnCopyPrompt" style="background: #007acc; padding: 6px 14px; font-size: 12px;">📋 Copy
+          Prompt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CÁC MODULE JAVASCRIPT ĐƯỢC PHÂN TÁCH GỌN GÀNG -->
+  <script src="js/state.js"></script>
+  <script src="js/terminal.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/file-manager.js"></script>
+  <script src="js/script-runner.js"></script>
+  <script src="js/inline-excel.js"></script>
+  <script src="js/prompt-generator.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>

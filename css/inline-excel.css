@@ -1,0 +1,257 @@
+/* ========================================================
+   BẢNG TÍNH MÔ PHỎNG EXCEL TRỰC TIẾP TRÊN TERMINAL (INLINE)
+   ======================================================== */
+.inline-excel-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.inline-excel-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.inline-excel-input {
+  background: #141414;
+  color: #d4d4d4;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  outline: none;
+  font-family: Consolas, monospace;
+}
+
+.inline-excel-input:focus {
+  border-color: #107c41;
+}
+
+.inline-excel-btn {
+  background: #2d2d30;
+  color: #ccc;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+
+.inline-excel-btn:hover {
+  background: #3e3e42;
+  color: #fff;
+  border-color: #666;
+}
+
+.inline-excel-btn.btn-danger-clean:hover {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+  background: rgba(235, 87, 87, 0.15);
+}
+
+/* Nút Dùng Data Này */
+.btn-use-mock {
+  background: #1b3d27;
+  color: #93e6b6;
+  border: 1px solid #238636;
+  border-radius: 4px;
+  padding: 3px 11px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.btn-use-mock:hover {
+  background: #238636;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.btn-use-mock.active {
+  background: #107c41;
+  color: #ffffff;
+  border-color: #38c172;
+  box-shadow: 0 0 10px rgba(56, 193, 114, 0.45);
+  font-weight: 700;
+}
+
+/* Bảng tính Viewport có đầy đủ thanh cuộn tràn X & Y */
+.inline-excel-viewport {
+  flex: 1;
+  min-height: 100px;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  background: #181818;
+  outline: none;
+  position: relative;
+}
+
+/* Thanh cuộn hiện đại cho cả chiều ngang X và chiều dọc Y */
+.inline-excel-viewport::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.inline-excel-viewport::-webkit-scrollbar-track {
+  background: #181818;
+}
+
+.inline-excel-viewport::-webkit-scrollbar-thumb {
+  background: #383838;
+  border-radius: 4px;
+}
+
+.inline-excel-viewport::-webkit-scrollbar-thumb:hover {
+  background: #107c41;
+}
+
+.inline-excel-viewport::-webkit-scrollbar-corner {
+  background: #141414;
+}
+
+.inline-excel-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11.5px;
+  color: #d4d4d4;
+  table-layout: auto;
+}
+
+.inline-excel-table th,
+.inline-excel-table td {
+  border-right: 1px solid #303030;
+  border-bottom: 1px solid #303030;
+  padding: 4px 8px;
+  white-space: nowrap;
+  outline: none;
+  height: 25px;
+  box-sizing: border-box;
+  min-width: 85px;
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Cột số dòng 1, 2, 3... */
+.inline-excel-row-td {
+  background: #202022;
+  color: #888;
+  text-align: center;
+  font-weight: 600;
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  user-select: none;
+  border-left: 1px solid #3a3a3a;
+  border-right: 1px solid #3a3a3a !important;
+}
+
+.inline-excel-corner-th {
+  background: #1a1a1c;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  color: #107c41;
+  text-align: center;
+  font-weight: bold;
+  border-left: 1px solid #3a3a3a;
+  border-right: 1px solid #3a3a3a !important;
+  border-bottom: 1px solid #3a3a3a !important;
+}
+
+/* Hàng tiêu đề cột A, B, C... AA, AB... */
+.inline-excel-col-th {
+  background: #232326;
+  color: #9cdcfe;
+  font-weight: 700;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  user-select: none;
+  border-bottom: 1px solid #3a3a3a !important;
+  cursor: pointer;
+  letter-spacing: 0.2px;
+}
+
+.inline-excel-col-th:hover {
+  background: #2b2b2f;
+  color: #60a5fa;
+}
+
+.inline-excel-col-th:focus {
+  background: #1a382c;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px #107c41;
+}
+
+/* Ô dữ liệu được chọn hoặc đang focus */
+.inline-excel-table td.cell-selected {
+  background: rgba(16, 124, 65, 0.25) !important;
+  box-shadow: inset 0 0 0 2px #21a366 !important;
+  color: #ffffff !important;
+}
+
+.inline-excel-table td:focus {
+  background: rgba(16, 124, 65, 0.35) !important;
+  box-shadow: inset 0 0 0 2px #22c55e !important;
+  color: #ffffff !important;
+  white-space: pre !important;
+  overflow: visible !important;
+  z-index: 2;
+  position: relative;
+}
+
+.inline-excel-table tr:hover td:not(.cell-selected) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.btn-inline-del-row {
+  background: transparent;
+  color: #777;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+  visibility: hidden;
+  line-height: 1;
+}
+
+.inline-excel-table tr:hover .btn-inline-del-row {
+  visibility: visible;
+}
+
+.btn-inline-del-row:hover {
+  color: #ff5555;
+}

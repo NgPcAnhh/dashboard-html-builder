@@ -1,0 +1,280 @@
+/* ========================================================
+   TERMINAL CONSOLE & DANH SÁCH FILE ĐÃ NẠP
+   ======================================================== */
+.badge-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(40, 167, 69, 0.2);
+  color: #4ec9b0;
+  border: 1px solid #28a745;
+  font-weight: bold;
+}
+
+/* Danh sách file đã tải */
+.files-list-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  gap: 4px;
+}
+
+.files-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #888;
+  padding: 0 2px;
+}
+
+.files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 260px;
+  padding-right: 4px;
+}
+
+.file-card {
+  background: #1e1e1e;
+  border: 1px solid #383838;
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.file-card:hover {
+  border-color: #555;
+  background: #222222;
+}
+
+.file-card.active {
+  border-color: #007acc;
+  background: #1a232c;
+  box-shadow: inset 2.5px 0 0 #007acc;
+}
+
+.file-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.file-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.file-badge-index {
+  background: #0e639c;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.file-card-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #9cdcfe;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-code-chip {
+  background: #2d2d30;
+  color: #4ec9b0;
+  border: 1px solid #454545;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-family: Consolas, monospace;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: 0.15s;
+}
+
+.file-code-chip:hover {
+  background: #007acc;
+  color: #ffffff;
+  border-color: #007acc;
+}
+
+.file-card-meta {
+  font-size: 11px;
+  color: #999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.file-remove-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  transition: 0.15s;
+}
+
+.file-remove-btn:hover {
+  color: #f48771;
+  background: rgba(244, 135, 113, 0.15);
+}
+
+/* Khu vực danh sách các Sheet của File */
+.sheet-section {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sheet-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10.5px;
+  color: #aaa;
+}
+
+.sheet-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-sheet-quick {
+  background: transparent;
+  color: #4ec9b0;
+  border: none;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 2px;
+  text-decoration: underline;
+}
+
+.btn-sheet-quick:hover {
+  color: #fff;
+}
+
+.sheet-chips-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.sheet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  background: #252526;
+  border: 1px solid #444;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #888;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s;
+}
+
+.sheet-chip:hover {
+  border-color: #666;
+  background: #2b2b2b;
+}
+
+.sheet-chip.selected {
+  background: #143525;
+  border-color: #2ea043;
+  color: #e6edf3;
+  font-weight: 500;
+}
+
+.sheet-chip input[type="checkbox"] {
+  accent-color: #2ea043;
+  cursor: pointer;
+  margin: 0;
+  width: 13px;
+  height: 13px;
+}
+
+.sheet-chip-count {
+  font-size: 10px;
+  color: #7ee787;
+  font-family: Consolas, monospace;
+}
+
+.sheet-chip:not(.selected) .sheet-chip-count {
+  color: #777;
+}
+
+/* Terminal Console */
+.terminal-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  border-radius: 6px;
+  border: 1px solid #333;
+  overflow: hidden;
+  min-height: 140px;
+}
+
+.terminal-header {
+  background: #111;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #aaa;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid #222;
+}
+
+#terminal {
+  flex: 1;
+  padding: 10px;
+  overflow-y: auto;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #00ff66;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-err {
+  color: #f48771 !important;
+}
+
+.log-warn {
+  color: #cca700 !important;
+}
+
+.log-info {
+  color: #75beff;
+}

@@ -1,0 +1,4 @@
+- nút thu gọn thanh tab bar chỉ hiển thị mũi tên lên và mũi tên xuống thôi. và trong chế độ xem trước khi mà thanh tab bar bị ẩn đi thì vẫn không có nút mở rộng thanh tab bar ra
+- các thanh tab bar khi set ở chế độ ngang 2 bên chưa hoạt động đúng như web được
+- khi mà vị trí của chart khi mà lưu chưa đặt đúng vị trí khi lưu được, mà đang lưu ở đặt ví trị mặc định
+

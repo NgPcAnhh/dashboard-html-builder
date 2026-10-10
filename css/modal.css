@@ -1,0 +1,188 @@
+/* ========================================================
+   MODAL PROMPT AI GENERATOR
+   ======================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #252526;
+  width: 760px;
+  max-width: 92%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid #454545;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.prompt-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.modal h3 {
+  color: #ce9178;
+  font-size: 16px;
+}
+
+.modal label {
+  font-size: 12px;
+  color: #bbb;
+}
+
+.modal textarea {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+#userTaskInput {
+  height: 70px;
+  resize: none;
+}
+
+#fullPromptOutput {
+  height: 160px;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  color: #9cdcfe;
+  resize: none;
+  background: #181818;
+}
+
+.modal-options {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: #1e1e1e;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #3c3c3c;
+}
+
+.modal-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #bbb;
+  cursor: pointer;
+  user-select: none;
+}
+
+.modal-options input[type="checkbox"] {
+  accent-color: #007acc;
+  cursor: pointer;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+/* ========================================================
+   KHU VỰC CHỌN NGUỒN FILE TRUYỀN DỮ LIỆU MẪU VÀO PROMPT
+   ======================================================== */
+.prompt-source-picker {
+  background: #1e1e22;
+  border: 1px solid #383842;
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prompt-source-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid #2d2d32;
+  padding-bottom: 5px;
+}
+
+.btn-picker-action {
+  background: #2a2a30;
+  color: #bbb;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-picker-action:hover {
+  background: #007acc;
+  color: #fff;
+  border-color: #007acc;
+}
+
+.prompt-sources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 125px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.prompt-source-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #17171a;
+  border: 1px solid #2b2b30;
+  transition: all 0.15s;
+}
+
+.prompt-source-item:hover {
+  background: #232328;
+  border-color: #3b3b45;
+}
+
+.prompt-source-item.active {
+  background: rgba(0, 122, 204, 0.12);
+  border-color: rgba(0, 122, 204, 0.4);
+}
+
+.prompt-source-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #d4d4d4;
+  cursor: pointer;
+  user-select: none;
+  flex: 1;
+}
+
+.prompt-source-meta {
+  font-size: 10.5px;
+  color: #4ec9b0;
+  font-family: Consolas, monospace;
+}
+

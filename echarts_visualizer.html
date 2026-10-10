@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trực Quan Hóa Dữ Liệu Bằng ECharts - Live Compiler</title>
+
+  <!-- Theme CSS & Reset -->
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/echarts-visualizer.css">
+
+  <!-- Dữ liệu JSON & JSON Storage Engine -->
+  <script src="data/storage.js"></script>
+  <script src="js/json-storage.js"></script>
+
+  <!-- Khởi tạo Theme sớm -->
+  <script src="js/theme.js"></script>
+
+  <!-- Thư viện ECharts (Offline + CDN Fallback) -->
+  <script src="js/echarts.min.js"></script>
+  <script>
+    if (typeof echarts === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Thư viện SheetJS để nạp file Excel/CSV -->
+  <script src="js/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+</head>
+
+<body>
+
+  <!-- ====================================================================
+       TOP NAVBAR
+       ==================================================================== -->
+  <nav class="viz-navbar">
+    <div class="viz-nav-left">
+      <a href="index.html" class="btn-viz" title="Quay lại Màn hình Quản lý Tools">
+        🏠 Quản lý Tools
+      </a>
+      <div class="viz-brand">
+        <div class="viz-brand-logo">📈</div>
+        <div class="viz-title">
+          <span>Trực Quan Hóa Dữ Liệu (ECharts)</span>
+          <span class="viz-badge">Live Compiler</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="viz-nav-right">
+      <button class="btn-viz" id="btnOpenPresets" title="Chọn biểu đồ mẫu trong thư viện">
+        📚 Mẫu Biểu Đồ
+      </button>
+      <button class="btn-viz btn-viz-accent" id="btnOpenFullPage" title="Xuất và mở biểu đồ trong tab mới toàn màn hình (Full page view)">
+        🌐 Mở Full Tab Mới
+      </button>
+      <button class="btn-viz" id="btnExportPng" title="Xuất ảnh biểu đồ độ phân giải cao">
+        📷 Tải Ảnh PNG
+      </button>
+      <button class="btn-viz btn-theme-toggle" id="vizThemeToggle" title="Chuyển nhanh Giao diện Sáng / Tối">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-text">Dark Mode</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ====================================================================
+       KHÔNG GIAN LÀM VIỆC CHÍNH (SPLIT SCREEN)
+       ==================================================================== -->
+  <main class="viz-workspace">
+
+    <!-- CỘT TRÁI: EDITOR VÀ DỮ LIỆU ĐẦU VÀO -->
+    <aside class="viz-editor-panel">
+      <!-- Tabs Bar -->
+      <div class="viz-tabs-bar">
+        <div class="viz-tabs">
+          <button class="viz-tab-btn active" data-tab="tabCode">
+            <span>💻</span> Code JavaScript
+          </button>
+          <button class="viz-tab-btn" data-tab="tabData">
+            <span>📁</span> Nạp Excel / CSV
+          </button>
+        </div>
+        <div class="viz-tab-tools">
+          <button class="btn-viz btn-viz-primary" id="btnRunCode" title="Phím tắt: Ctrl + Enter">
+            ▶ Chạy Code
+          </button>
+          <button class="btn-viz btn-viz-accent" id="btnOpenAiPrompt" title="Tạo System Prompt chặt chẽ cho AI (ChatGPT/Gemini/Claude) viết code ECharts">
+            🤖 Prompt AI
+          </button>
+          <button class="btn-viz" id="btnFormatCode" title="Căn chỉnh thụt lề code tự động (Phím tắt: Shift + Alt + F)">
+            ✨ Căn Chỉnh
+          </button>
+          <button class="btn-viz" id="btnCopyCode" title="Sao chép toàn bộ code">
+            📋 Copy
+          </button>
+          <button class="btn-viz" id="btnResetCode" title="Khôi phục code mẫu ban đầu">
+            🔄
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB 1: CODE EDITOR -->
+      <div class="viz-tab-content active" id="tabCode">
+        <div class="viz-code-wrapper" id="vizCodeContainer">
+          <div class="viz-line-numbers" id="vizLineNumbers">1</div>
+          <div class="viz-code-editor-layer">
+            <pre class="viz-code-highlight" id="vizCodeHighlight" aria-hidden="true"><code id="vizCodeHighlightContent"></code></pre>
+            <textarea class="viz-code-textarea" id="vizCodeEditor" spellcheck="false"
+              placeholder="// Viết code JavaScript cấu hình Apache ECharts tại đây...&#10;// Biến 'data' đã có sẵn chứa toàn bộ dữ liệu file bạn đẩy lên!&#10;// Trả về object 'return option;' hoặc gọi 'myChart.setOption(option);'"></textarea>
+          </div>
+        </div>
+
+        <!-- Terminal Console Logger -->
+        <div class="viz-console-panel">
+          <div class="viz-console-header">
+            <span>📟 Terminal &amp; Compiler Monitor</span>
+            <button class="btn-viz" id="btnClearConsole" style="padding: 1px 6px; font-size: 10px;">Xóa log</button>
+          </div>
+          <div class="viz-console-body" id="vizConsoleBody">
+            <div class="viz-log-info">⚡ Trình biên dịch ECharts đã sẵn sàng. Bấm "▶ Chạy Code" hoặc nhấn Ctrl+Enter để vẽ biểu đồ!</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: NẠP FILE EXCEL / CSV -->
+      <div class="viz-tab-content" id="tabData">
+        <div class="viz-data-panel">
+          <div class="viz-drop-zone" id="vizDropZone">
+            <div style="font-size: 28px; margin-bottom: 6px;">📥</div>
+            <div style="font-size: 13px; font-weight: 600; color: var(--text-main);">Kéo thả file Excel (.xlsx, .xls) hoặc .CSV vào đây</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">hoặc bấm để duyệt file từ máy tính</div>
+            <input type="file" id="vizFileInput" accept=".xlsx,.xls,.csv" style="display: none;" />
+          </div>
+
+          <div class="viz-data-meta" id="vizDataMeta">
+            Chưa có file nào được nạp. Bạn có thể kéo thả file Excel/CSV vào đây. Khi nạp xong, bạn chỉ cần gọi trực tiếp biến <code>data</code> trong code JavaScript để xử lý và vẽ biểu đồ ngay lập tức!
+          </div>
+
+          <button class="btn-viz btn-viz-primary" id="btnAutoPlotData" style="display: none; width: 100%; justify-content: center; padding: 8px 14px; font-size: 12px;">
+            ⚡ Tự Động Chèn Code Vẽ Biểu Đồ Từ Biến "data"
+          </button>
+
+          <div style="font-size: 12px; font-weight: 600; color: var(--accent-cyan); display: flex; align-items: center; gap: 5px;">
+            <span>👀</span> Bảng xem trước dữ liệu (5 dòng đầu):
+          </div>
+
+          <div class="viz-preview-table-wrapper" id="vizPreviewTableContainer">
+            <div style="padding: 20px; text-align: center; color: var(--text-dim); font-size: 11px;">
+              Chưa có dữ liệu để hiển thị
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- THANH KÉO GIÃN KÍCH THƯỚC (RESIZER) -->
+    <div class="viz-resizer" id="vizResizer" title="Kéo để điều chỉnh độ rộng 2 cột"></div>
+
+    <!-- CỘT PHẢI: KHUNG VẼ BIỂU ĐỒ ECHARTS -->
+    <section class="viz-chart-panel">
+      <div class="viz-chart-toolbar">
+        <div style="font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; color: #0f172a;">
+          <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+          <span>Bản Vẽ ECharts Tương Tác Trực Tuyến</span>
+        </div>
+        <div style="font-size: 11px; color: #475569;">
+          Gợi ý: Dùng chuột hover, click vào legend để ẩn/hiện, cuộn chuột để zoom dữ liệu.
+        </div>
+      </div>
+
+      <!-- VÙNG RENDER CANVAS -->
+      <div class="viz-chart-container">
+        <div id="echartsMainCanvas"></div>
+      </div>
+
+      <!-- STATUS BAR DƯỚI ĐÁY -->
+      <footer class="viz-chart-statusbar">
+        <div>
+          <span>Engine: <b>Apache ECharts v5.5</b></span>
+        </div>
+        <div style="display: flex; gap: 16px;">
+          <span>Thời gian biên dịch: <b id="renderTime" style="color: var(--accent-cyan);">0 ms</b></span>
+          <span>Điểm dữ liệu: <b id="dataCount" style="color: #34d399;">0 điểm</b></span>
+        </div>
+      </footer>
+    </section>
+
+  </main>
+
+  <!-- ====================================================================
+       MODAL 1: BỘ SƯU TẬP MẪU BIỂU ĐỒ (PRESETS)
+       ==================================================================== -->
+  <div class="viz-modal" id="vizPresetModal">
+    <div class="viz-modal-content">
+      <div class="viz-modal-header">
+        <h3><span>📚</span> Thư Viện Mẫu Biểu Đồ ECharts Chuẩn Doanh Nghiệp</h3>
+        <button class="btn-viz" id="btnClosePresetModal" style="padding: 2px 8px;">✕</button>
+      </div>
+      <div class="viz-modal-body">
+        <div class="preset-grid" id="vizPresetGrid">
+          <!-- Render động từ JS -->
+        </div>
+      </div>
+      <div class="viz-modal-footer">
+        <span style="font-size: 11px; color: var(--text-muted); margin-right: auto;">💡 Bấm vào bất kỳ thẻ nào để áp dụng code mẫu ngay lập tức.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 2: TRÌNH TẠO PROMPT AI CHUYÊN SÂU CHO NON-CODE / LOW-CODE
+       ==================================================================== -->
+  <div class="viz-modal" id="vizAiPromptModal">
+    <div class="viz-modal-content" style="width: 860px;">
+      <div class="viz-modal-header">
+        <h3><span>🤖</span> Trình Tạo Prompt AI Cho Apache ECharts (Chuẩn Chặt Chẽ Cho Non-Code / Low-Code)</h3>
+        <button class="btn-viz" id="btnCloseAiModal" style="padding: 2px 8px;">✕</button>
+      </div>
+      <div class="viz-modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+
+        <!-- Ô 1: THÔNG TIN DỮ LIỆU ĐẦU VÀO -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 12px; font-weight: 700; color: #9cdcfe;">
+              1. Dữ liệu đầu vào (Tự động nhận diện file đã nạp):
+            </label>
+            <span id="aiPromptFileBadge" style="font-size: 11px; color: #34d399; font-weight: 600;">
+              Chưa nạp file
+            </span>
+          </div>
+          <div id="aiPromptColsBadge" style="font-size: 11px; color: #94a3b8; background: #070b14; border: 1px solid rgba(255,255,255,0.08); padding: 6px 10px; border-radius: 4px; max-height: 55px; overflow-y: auto;">
+            Danh sách cột sẽ tự động xuất hiện ở đây khi nạp file...
+          </div>
+          <textarea id="aiInputDataDesc" style="height: 42px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 5px; color: var(--text-main); padding: 6px 10px; font-size: 11.5px; resize: vertical;"
+            placeholder="Ghi chú thêm về dữ liệu nếu cần (tùy chọn): ví dụ cột 'Doanh thu' là số tiền VNĐ, cột 'Trạng thái đơn' có các giá trị Hoàn tất, Hủy..."></textarea>
+        </div>
+
+        <!-- Ô 2: NGHIỆP VỤ XỬ LÝ (CHỈ CẦN MÔ TẢ NGẮN GỌN) -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; font-weight: 700; color: #ce9178;">
+            2. Yêu cầu xử lý nghiệp vụ &amp; Gom nhóm dữ liệu (Mô tả ngắn gọn bằng lời):
+          </label>
+          <textarea id="aiBusinessLogic" style="height: 65px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 5px; color: var(--text-main); padding: 6px 10px; font-size: 11.5px; resize: vertical;"
+            placeholder="Ví dụ cụ thể:&#10;- Gom nhóm theo cột 'Khu vực' và tính tổng 'Doanh thu', tổng 'Lợi nhuận'&#10;- Lọc bỏ các đơn có 'Trạng thái đơn' là 'Đã hủy'&#10;- Tính tỷ suất lợi nhuận Margin % = (Lợi nhuận / Doanh thu) * 100"></textarea>
+        </div>
+
+        <!-- Ô 3: KIỂU BIỂU ĐỒ & KẾT QUẢ ĐẦU RA MONG MUỐN -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; font-weight: 700; color: #dcdcaa;">
+            3. Kiểu biểu đồ &amp; Kết quả đầu ra mong muốn:
+          </label>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;">
+            <button type="button" class="btn-picker-action ai-type-chip" data-type="Biểu đồ cột đôi dải màu Gradient so sánh Doanh thu và Lợi nhuận">📊 Cột Gradient</button>
+            <button type="button" class="btn-picker-action ai-type-chip" data-type="Biểu đồ đường xu hướng Smooth Area có vùng phủ gradient mềm mại">📈 Đường Xu Hướng</button>
+            <button type="button" class="btn-picker-action ai-type-chip" data-type="Biểu đồ bánh Donut tỷ trọng % có góc bo mềm mại">🍩 Bánh Donut %</button>
+            <button type="button" class="btn-picker-action ai-type-chip" data-type="Biểu đồ hỗn hợp Cột (Doanh thu) và Đường (Tỷ suất lợi nhuận %) 2 trục Y">📶 Cột &amp; Đường Đôi</button>
+            <button type="button" class="btn-picker-action ai-type-chip" data-type="Biểu đồ tương tác đa chiều có nút bấm chuyển đổi Khu Vực / Danh Mục / Kênh Bán">🎛️ Dashboard Đa Nút</button>
+          </div>
+          <textarea id="aiExpectedOutput" style="height: 45px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 5px; color: var(--text-main); padding: 6px 10px; font-size: 11.5px; resize: vertical;"
+            placeholder="Ví dụ: Xuất biểu đồ có tiêu đề rõ ràng, đơn vị tiền VNĐ, tooltip chi tiết, toolbox tải ảnh, nền trắng, màu sắc xanh dương và xanh lá hiện đại..."></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end;">
+          <button class="btn-viz btn-viz-primary" id="btnGenerateAiPrompt" style="padding: 6px 16px;">
+            ⚡ Sinh System Prompt Chặt Chẽ Cho AI
+          </button>
+        </div>
+
+        <!-- Ô 4: PROMPT HOÀN CHỈNH -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; font-weight: 700; color: #4ec9b0;">
+            4. System Prompt hoàn chỉnh (Copy gửi ChatGPT, Gemini, Claude, DeepSeek):
+          </label>
+          <textarea id="aiPromptOutput" readonly spellcheck="false"
+            style="height: 155px; background: #070b14; border: 1px solid var(--border-subtle); border-radius: 5px; color: #9cdcfe; font-family: Consolas, monospace; font-size: 11px; padding: 10px; resize: vertical;"></textarea>
+        </div>
+      </div>
+      <div class="viz-modal-footer">
+        <span style="font-size: 11px; color: var(--text-muted); margin-right: auto;">💡 Prompt đã được tối ưu ràng buộc code 100% chạy không lỗi trên runtime của ECharts Studio.</span>
+        <button class="btn-viz btn-viz-primary" id="btnCopyAiPrompt">
+          📋 Copy Prompt Vào Clipboard
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPT CONTROLLER CHÍNH -->
+  <script src="js/echarts-visualizer.js"></script>
+
+</body>
+
+</html>

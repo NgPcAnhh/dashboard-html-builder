@@ -1,0 +1,1401 @@
+﻿<!DOCTYPE html>
+<html lang="vi" data-theme="light"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Báo Cáo Dashboard Mới - Superset Dashboard BI Studio</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Montserrat:wght@400;500;600;700;800&amp;family=Playfair+Display:ital,wght@0,600;0,700;1,400&amp;family=Roboto:ital,wght@0,400;0,500;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  <!-- Fallback to local styles if opened inside project directory -->
+  <link rel="stylesheet" href="../../css/theme.css">
+  <link rel="stylesheet" href="../../css/dashboard-builder.css">
+
+  <!-- Apache ECharts Library (Offline Local + CDN Fallback) -->
+  <script src="../../js/echarts.min.js"></script>
+  <script>
+    if (typeof echarts === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- SheetJS Library for Excel Processing (Offline Local + CDN Fallback) -->
+  <script src="../../js/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Standalone Viewer Stylesheet (100% Replicating Dashboard Edit Screen) -->
+  <style>
+    :root, [data-theme="light"] {
+      --db-header-height: 56px;
+      --db-toolbar-height: 48px;
+      --db-accent: #0284c7;
+      --db-accent-hover: #0369a1;
+      --db-accent-orange: #ea580c;
+      --db-card-bg: #ffffff;
+      --db-card-border: #e2e8f0;
+      --db-card-radius: 12px;
+      --db-canvas-bg: #f8fafc;
+      --db-text-main: #0f172a;
+      --db-text-sub: #64748b;
+      --bg-primary: #f8fafc;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      font-family: var(--font-family);
+      background-color: var(--db-canvas-bg);
+      color: var(--db-text-main);
+      min-height: 100vh;
+      overflow-x: hidden !important;
+      user-select: none;
+    }
+
+    /* 1. TOP NAVBAR */
+    .db-header {
+      position: sticky; top: 0; z-index: 100;
+      height: var(--db-header-height);
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    .db-header-left {
+      display: flex; align-items: center; gap: 12px; min-width: 0;
+    }
+    .db-title-container {
+      display: flex; align-items: center; gap: 10px; min-width: 0;
+    }
+    .db-title-heading {
+      font-size: 17px; font-weight: 700; color: #0f172a; margin: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .db-header-right {
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .db-btn-tool {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; font-size: 13px; font-weight: 600;
+      color: #0f172a; background: #f8fafc;
+      border: 1px solid #cbd5e1; border-radius: 8px;
+      cursor: pointer; text-decoration: none; transition: all 0.2s ease;
+      white-space: nowrap; outline: none;
+    }
+    .db-btn-tool:hover {
+      background: #f1f5f9; border-color: #94a3b8;
+    }
+
+    /* 2. WORKSPACE CONTAINER (TABS BAR + CANVAS) */
+    .db-studio-container {
+      display: flex; flex: 1;
+      min-height: calc(100vh - var(--db-header-height));
+      position: relative; width: 100%;
+      box-sizing: border-box; overflow: hidden;
+    }
+    .db-studio-container.tabs-pos-top { flex-direction: column; }
+    .db-studio-container.tabs-pos-bottom { flex-direction: column-reverse; }
+    .db-studio-container.tabs-pos-left { flex-direction: row; }
+    .db-studio-container.tabs-pos-right { flex-direction: row-reverse; }
+
+    /* Tabs Bar */
+    .db-tabs-bar {
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex; align-items: center; justify-content: flex-start;
+      padding: 0 20px; min-height: 52px; z-index: 50;
+      box-sizing: border-box;
+    }
+    .tabs-pos-bottom .db-tabs-bar {
+      border-top: 1px solid #e2e8f0; border-bottom: none;
+    }
+    .tabs-pos-left .db-tabs-bar {
+      border-right: 1px solid #e2e8f0; border-bottom: none;
+      flex-direction: column; align-items: stretch; justify-content: flex-start;
+      padding: 16px 12px; height: 100%; min-width: 230px; max-width: 230px;
+    }
+    .tabs-pos-right .db-tabs-bar {
+      border-left: 1px solid #e2e8f0; border-bottom: none;
+      flex-direction: column; align-items: stretch; justify-content: flex-start;
+      padding: 16px 12px; height: 100%; min-width: 230px; max-width: 230px;
+    }
+
+    .db-tabs-list {
+      display: flex; align-items: center; gap: 8px;
+      overflow-x: auto; overflow-y: hidden; flex: 1;
+      scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .db-tabs-list::-webkit-scrollbar { display: none; }
+    .tabs-pos-left .db-tabs-list,
+    .tabs-pos-right .db-tabs-list {
+      flex-direction: column; align-items: stretch;
+      overflow-y: auto; overflow-x: hidden; gap: 6px;
+    }
+
+    /* Tab Pills */
+    .db-tab-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      color: #64748b; background: transparent; border: 1px solid transparent;
+      cursor: pointer; transition: all 0.15s ease; white-space: nowrap; line-height: 1.4;
+      outline: none;
+    }
+    .db-tab-pill:hover {
+      background: rgba(0, 0, 0, 0.04); color: #0f172a;
+    }
+    .db-tab-pill.active {
+      background: var(--db-accent, #0284c7);
+      color: #ffffff; font-weight: 700;
+      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+      border-color: var(--db-accent, #0284c7);
+    }
+    .tab-index-badge {
+      font-size: 11px; font-weight: 700;
+      background: rgba(0, 0, 0, 0.08); border-radius: 4px;
+      padding: 1px 6px; line-height: 1.2;
+    }
+    .db-tab-pill.active .tab-index-badge {
+      background: rgba(255, 255, 255, 0.25); color: #ffffff;
+    }
+    .tab-name-label {
+      display: inline-block;
+    }
+
+    /* Tab Styles */
+    .tab-style-cards .db-tab-pill {
+      border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 8px 8px 0 0;
+    }
+    .tab-style-cards .db-tab-pill.active {
+      background: #ffffff; color: var(--db-accent, #0284c7);
+      border-color: var(--db-accent, #0284c7); border-bottom-color: #ffffff;
+    }
+    .tab-style-underline .db-tab-pill {
+      border-radius: 0; border-bottom: 2px solid transparent; background: transparent;
+    }
+    .tab-style-underline .db-tab-pill.active {
+      background: transparent; color: var(--db-accent, #0284c7);
+      border-bottom-color: var(--db-accent, #0284c7); box-shadow: none;
+    }
+    .tab-size-compact .db-tab-pill { padding: 4px 10px; font-size: 12px; }
+    .tab-size-comfortable .db-tab-pill { padding: 10px 22px; font-size: 14px; }
+
+    /* 3. CANVAS WRAPPER & CANVAS STUDIO */
+    .db-canvas-wrapper {
+      flex: 1; overflow-x: hidden !important; overflow-y: auto !important;
+      background-color: #f1f5f9;
+      display: flex; justify-content: center;
+      padding: 24px 16px 80px 16px; box-sizing: border-box;
+      width: 100%;
+    }
+    .canvas-bg-white {
+      background-color: #ffffff !important; background-image: none !important;
+    }
+    .canvas-bg-dots {
+      background-color: #f8fafc !important;
+      background-image: radial-gradient(#94a3b8 1.4px, transparent 1.4px) !important;
+      background-size: 20px 20px !important;
+    }
+    .canvas-bg-stripes {
+      background-color: #ffffff !important;
+      background-image: linear-gradient(90deg, #e2e8f0 1.5px, transparent 1.5px) !important;
+      background-size: 24px 24px !important;
+    }
+    .canvas-bg-grid {
+      background-color: #ffffff !important;
+      background-image: linear-gradient(#e2e8f0 1.2px, transparent 1.2px), linear-gradient(90deg, #e2e8f0 1.2px, transparent 1.2px) !important;
+      background-size: 22px 22px !important;
+    }
+
+    .db-canvas-viewport {
+      padding: 0; margin: 0 auto; width: 100%;
+      display: flex; justify-content: center; align-items: flex-start;
+      overflow-x: hidden; overflow-y: visible;
+      min-height: 100%; height: auto; flex: 1;
+    }
+
+    .db-canvas {
+      width: 1360px !important; min-width: 1360px !important; max-width: 1360px !important;
+      margin: 0 auto !important; position: relative !important;
+      overflow: hidden !important; box-sizing: border-box !important;
+      background-color: #ffffff !important;
+      border: 2px solid #2563eb !important;
+      border-radius: 10px !important;
+      box-shadow: 0 12px 36px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(37, 99, 235, 0.2) !important;
+      padding: 24px !important; min-height: 800px;
+      transform-origin: top center; transition: transform 0.1s ease-out;
+    }
+
+    /* 2 Boundary Guides */
+    .db-canvas-boundary-guide {
+      position: absolute; top: 0; bottom: 0; width: 0;
+      pointer-events: none; z-index: 5;
+      border-left: 1px dashed rgba(37, 99, 235, 0.35);
+    }
+    .db-canvas-boundary-guide.is-left { left: 24px; }
+    .db-canvas-boundary-guide.is-right { left: 1336px; }
+
+    /* 4. ITEMS & CARDS (MATCHING EDIT SCREEN PREVIEW MODE) */
+    .db-item-box {
+      position: absolute; background: #ffffff;
+      border: 1px solid #e2e8f0; border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      display: flex; flex-direction: column; overflow: hidden;
+      box-sizing: border-box; cursor: default;
+      transition: box-shadow 0.2s ease;
+    }
+    .db-item-box:hover {
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+    }
+    .db-item-box.is-frame {
+      background: rgba(255, 255, 255, 0.4) !important;
+      border: 2px dashed #cbd5e1 !important;
+      box-shadow: none !important;
+      z-index: 1;
+    }
+    .db-item-box.is-frameless-element,
+    .db-item-box.is-shape-line {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+    }
+    .db-item-box.is-frameless-element .db-item-header,
+    .db-item-box.is-shape-line .db-item-header,
+    .db-item-box.hide-header .db-item-header {
+      display: none !important;
+    }
+    .db-item-box.is-frameless-element .db-item-body,
+    .db-item-box.is-shape-line .db-item-body,
+    .db-item-box.hide-header .db-item-body {
+      height: 100% !important; padding: 0 !important;
+    }
+
+    .db-item-header {
+      height: 38px; padding: 0 12px;
+      display: flex; align-items: center; justify-content: flex-start;
+      font-size: 13px; font-weight: 700;
+      border-bottom: 1px solid #f1f5f9; background: rgba(255, 255, 255, 0.02);
+      color: #0f172a; flex-shrink: 0; user-select: none;
+    }
+    .db-item-header-left {
+      display: flex; align-items: center; gap: 6px; min-width: 0;
+    }
+    .db-item-title {
+      font-size: 13px; font-weight: 700; color: #0f172a;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .db-item-body {
+      flex: 1; padding: 10px; position: relative; min-height: 0;
+      display: flex; flex-direction: column; box-sizing: border-box;
+    }
+
+    .db-chart-canvas {
+      width: 100%; height: 100%; min-height: 80px;
+    }
+    .db-chart-error-banner {
+      color: #ef4444; font-size: 12px; padding: 12px; text-align: center;
+    }
+
+    .db-shape-container {
+      width: 100%; height: 100%; box-sizing: border-box;
+    }
+    .db-frame-container {
+      width: 100%; height: 100%; box-sizing: border-box;
+    }
+    .db-text-container {
+      box-sizing: border-box;
+    }
+
+    .db-action-btn-widget {
+      width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; user-select: none; transition: transform 0.1s, opacity 0.15s;
+      box-sizing: border-box;
+    }
+    .db-action-btn-widget:hover { opacity: 0.92; transform: translateY(-1px); }
+    .db-action-btn-widget:active { transform: translateY(0); }
+
+    .db-image-widget {
+      width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; box-sizing: border-box;
+    }
+    .db-image-widget img {
+      max-width: 100%; max-height: 100%; display: block;
+    }
+
+    /* 5. BI PLATFORM FILTERS (ALL TYPES) */
+    .db-filter-container {
+      display: flex; flex-direction: column; gap: 6px; justify-content: center;
+      height: 100%; padding: 6px 10px; box-sizing: border-box;
+    }
+    .db-filter-header-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .db-filter-label {
+      font-size: 11.5px; font-weight: 700; color: #334155;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+    }
+    .db-filter-reset-btn {
+      background: transparent; border: none; color: #64748b; font-size: 11px;
+      cursor: pointer; padding: 1px 5px; border-radius: 4px; line-height: 1;
+      transition: all 0.15s;
+    }
+    .db-filter-reset-btn:hover { background: #fee2e2; color: #ef4444; }
+    .db-filter-active-badge {
+      font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px;
+      border-radius: 4px; font-weight: 600; white-space: nowrap;
+    }
+    .db-filter-parent-badge {
+      font-size: 10px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;
+      padding: 1px 5px; border-radius: 4px; font-weight: 600; white-space: nowrap;
+    }
+    .db-filter-controls-row {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .db-filter-op-select {
+      width: 82px; background: #f8fafc; border: 1px solid #cbd5e1;
+      border-radius: 6px; padding: 5px 6px; font-size: 12px; font-weight: 700;
+      color: #0284c7; outline: none; cursor: pointer; flex-shrink: 0;
+    }
+    .db-filter-val-input,
+    .db-filter-val-select {
+      flex: 1; min-width: 0; background: #ffffff; border: 1px solid #cbd5e1;
+      border-radius: 6px; padding: 5px 8px; font-size: 12px; color: #1e293b;
+      outline: none; transition: border-color 0.15s;
+    }
+    .db-filter-val-input:focus,
+    .db-filter-val-select:focus { border-color: #0284c7; }
+    .db-filter-range-wrap,
+    .db-filter-date-range-wrap {
+      display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0;
+    }
+    .db-filter-range-input,
+    .db-filter-date-input {
+      flex: 1; min-width: 0; background: #ffffff; border: 1px solid #cbd5e1;
+      border-radius: 6px; padding: 4px 6px; font-size: 11px; color: #1e293b;
+      outline: none; font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .db-filter-range-input:focus,
+    .db-filter-date-input:focus {
+      border-color: #0284c7; box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+    }
+    .db-filter-range-sep,
+    .db-filter-date-sep {
+      font-size: 11px; color: #64748b; font-weight: 700; flex-shrink: 0;
+    }
+    .db-filter-multiselect-container {
+      position: relative; flex: 1; min-width: 0;
+    }
+    .db-filter-multiselect-btn {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+      background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px;
+      padding: 4px 8px; font-size: 11px; color: #1e293b; cursor: pointer;
+      outline: none; text-align: left; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .db-filter-multiselect-btn:hover { border-color: #94a3b8; }
+    .db-filter-multiselect-dropdown {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      min-width: 220px; background: #ffffff; border: 1px solid #cbd5e1;
+      border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 4px 10px -2px rgba(0, 0, 0, 0.1);
+      z-index: 1000; padding: 8px; display: none;
+    }
+    .db-filter-multiselect-dropdown.open {
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .db-filter-multiselect-search {
+      width: 100%; border: 1px solid #cbd5e1; border-radius: 4px;
+      padding: 4px 6px; font-size: 11px; outline: none;
+    }
+    .db-filter-multiselect-actions {
+      display: flex; justify-content: space-between; gap: 4px; font-size: 10px;
+    }
+    .db-filter-ms-action-btn {
+      background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px;
+      padding: 3px 6px; font-size: 10.5px; cursor: pointer; color: #334155; font-weight: 600;
+    }
+    .db-filter-ms-action-btn:hover { background: #e2e8f0; color: #0f172a; }
+    .db-filter-multiselect-list {
+      max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+    }
+    .db-filter-multiselect-item {
+      display: flex; align-items: center; gap: 6px; padding: 3px 6px;
+      border-radius: 4px; font-size: 11px; color: #1e293b; cursor: pointer;
+    }
+    .db-filter-multiselect-item:hover { background: #f1f5f9; }
+  </style>
+</head>
+
+<body class="dashboard-app-body preview-mode">
+  <!-- 1. Header Web Dashboard (Tái hiện thanh tiêu đề) -->
+  <header class="db-header">
+    <div class="db-header-left">
+      <div class="db-title-container">
+        <span style="font-size:22px;">📊</span>
+        <h1 class="db-title-heading" id="dashboardTitleHeading">Báo Cáo Dashboard Mới</h1>
+      </div>
+    </div>
+    <div class="db-header-right">
+      <button class="db-btn-tool" id="btnViewerUploadExcel" title="Cập nhật nguồn dữ liệu Excel cho Dashboard">
+        📤 Nạp Excel Mới
+      </button>
+      <input type="file" id="viewerExcelFileInput" accept=".xlsx,.xls,.csv" style="display:none;">
+    </div>
+  </header>
+
+  <!-- 2. Studio Workspace Container (Tabs Bar + Canvas) -->
+  <div class="db-studio-container tabs-pos-top" id="dbStudioContainer">
+    <!-- Thanh Tab Báo Cáo -->
+    <section class="db-tabs-bar" id="dbTabsBar">
+      <div class="db-tabs-list" id="dbTabsList"><button class="db-tab-pill active" style="background-color: rgb(2, 132, 199); border-color: rgb(2, 132, 199);"><span class="tab-name-label">📊 Trang 1</span></button><button class="db-tab-pill "><span class="tab-name-label">Trang 2</span></button></div>
+    </section>
+
+    <!-- Canvas Studio -->
+    <main class="db-canvas-wrapper canvas-bg-grid" id="canvasWrapper">
+      <div class="db-canvas-viewport" id="canvasViewport">
+        <div class="db-canvas" id="dashboardCanvas" data-original-height="860" style="min-height: 860px; transform: scale(0.466912); transform-origin: center top; margin-bottom: -458px;"><div class="db-canvas-boundary-guide is-left"></div><div class="db-canvas-boundary-guide is-right"></div><div class="db-item-box is-type-chart hide-header " id="item_chart_1791447883914" style="left: 24px; top: 24px; width: 560px; height: 360px; z-index: 10;"><div class="db-item-header"><div class="db-item-header-left"><span class="db-item-title">Biểu Đồ 1</span></div></div><div class="db-item-body" id="item_body_chart_1791447883914"><div class="db-chart-canvas" id="chart_el_chart_1791447883914" _echarts_instance_="ec_1791558093973" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"><div style="position: relative; width: 558px; height: 358px; padding: 0px; margin: 0px; border-width: 0px;"><canvas data-zr-dom-id="zr_0" width="558" height="358" style="position: absolute; left: 0px; top: 0px; width: 558px; height: 358px; user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); padding: 0px; margin: 0px; border-width: 0px;"></canvas></div><div class=""></div></div></div></div><div class="db-item-box is-type-chart hide-header " id="item_chart_1791447893040" style="left: 615px; top: 24px; width: 560px; height: 360px; z-index: 10;"><div class="db-item-header"><div class="db-item-header-left"><span class="db-item-title">Biểu Đồ 2</span></div></div><div class="db-item-body" id="item_body_chart_1791447893040"><div class="db-chart-canvas" id="chart_el_chart_1791447893040" _echarts_instance_="ec_1791558093974" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"><div style="position: relative; width: 558px; height: 358px; padding: 0px; margin: 0px; border-width: 0px;"><canvas data-zr-dom-id="zr_0" width="558" height="358" style="position: absolute; left: 0px; top: 0px; width: 558px; height: 358px; user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); padding: 0px; margin: 0px; border-width: 0px;"></canvas></div><div class=""></div></div></div></div><div class="db-item-box is-type-chart " id="item_chart_1791457009942" style="left: 55px; top: 415px; width: 560px; height: 360px; z-index: 10;"><div class="db-item-header"><div class="db-item-header-left"><span class="db-item-title">Biểu Đồ 3</span></div></div><div class="db-item-body" id="item_body_chart_1791457009942"><div class="db-chart-canvas" id="chart_el_chart_1791457009942" _echarts_instance_="ec_1791558093975" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"><div style="position: relative; width: 538px; height: 300px; padding: 0px; margin: 0px; border-width: 0px;"><canvas data-zr-dom-id="zr_0" width="538" height="300" style="position: absolute; left: 0px; top: 0px; width: 538px; height: 300px; user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); padding: 0px; margin: 0px; border-width: 0px;"></canvas></div><div class=""></div></div></div></div><div class="db-item-box is-type-chart hide-header " id="item_chart_1791470542687" style="left: 482px; top: 415px; width: 560px; height: 360px; z-index: 10;"><div class="db-item-header"><div class="db-item-header-left"><span class="db-item-title">Biểu Đồ 4</span></div></div><div class="db-item-body" id="item_body_chart_1791470542687"><div class="db-chart-canvas" id="chart_el_chart_1791470542687" _echarts_instance_="ec_1791558093976" style="user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); position: relative;"><div style="position: relative; width: 558px; height: 358px; padding: 0px; margin: 0px; border-width: 0px;"><canvas data-zr-dom-id="zr_0" width="558" height="358" style="position: absolute; left: 0px; top: 0px; width: 558px; height: 358px; user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); padding: 0px; margin: 0px; border-width: 0px;"></canvas></div><div class=""></div></div></div></div></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const CONFIG = {"id":"dashboard_1791447872041","title":"Báo Cáo Dashboard Mới","description":"Dashboard BI tùy biến bằng JavaScript ECharts và nguồn dữ liệu Excel","createdAt":"2026-10-08T08:24:32.041Z","updatedAt":"2026-10-08T14:45:00.563Z","theme":{"themeMode":"light","canvasBg":"grid"},"tabs":[{"id":"tab_page_1","name":"📊 Trang 1"},{"id":"tab_1791447887213","name":"Trang 2"}],"activeTabId":"tab_page_1","items":[{"id":"chart_1791447883914","type":"chart","name":"Biểu Đồ 1","dataSourceKey":"Du_Lieu_Mau_Kinh_Doanh.xlsx::BaoCaoDoanhSo","code":"// 💡 Hướng dẫn lấy dữ liệu Excel trong code:\n// - Biến 'data': Mảng dòng mặc định từ Sheet đầu tiên đã nạp.\n// - Lấy sheet bất kỳ: const rows = getSheet('TênSheet');\n// - Lấy file cụ thể: const rows = files['TenFile.xlsx']['TênSheet'];\n\nconst categories = data.map(row => row['Tháng']);\nconst values = data.map(row => Number(row['Doanh Thu']) || 0);\n\nreturn {\n  title: { text: 'Doanh Thu theo Tháng', textStyle: { color: '#0f172a', fontSize: 13, fontWeight: 700 } },\n  tooltip: { trigger: 'axis', valueFormatter: v => new Intl.NumberFormat('vi-VN').format(v) },\n  grid: { left: '4%', right: '4%', bottom: '10%', top: '16%', containLabel: true },\n  xAxis: {\n    type: 'category',\n    data: categories,\n    axisLabel: { color: '#64748b' }\n  },\n  yAxis: {\n    type: 'value',\n    splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },\n    axisLabel: { color: '#64748b' }\n  },\n  series: [\n    {\n      name: 'Doanh Thu',\n      type: 'bar',\n      data: values,\n      itemStyle: {\n        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [\n          { offset: 0, color: '#0284c7' },\n          { offset: 1, color: '#0369a1' }\n        ]),\n        borderRadius: [4, 4, 0, 0]\n      }\n    }\n  ]\n};","tabId":"tab_page_1","pos":{"x":24,"y":24,"w":560,"h":360,"zIndex":10},"hideHeader":true},{"id":"chart_1791447893040","type":"chart","name":"Biểu Đồ 2","dataSourceKey":"Du_Lieu_Mau_Kinh_Doanh.xlsx::BaoCaoDoanhSo","code":"// 💡 Hướng dẫn lấy dữ liệu Excel trong code:\n// - Biến 'data': Mảng dòng mặc định từ Sheet đầu tiên đã nạp.\n// - Lấy sheet bất kỳ: const rows = getSheet('TênSheet');\n// - Lấy file cụ thể: const rows = files['TenFile.xlsx']['TênSheet'];\n\nconst categories = data.map(row => row['Tháng']);\nconst values = data.map(row => Number(row['Doanh Thu']) || 0);\n\nreturn {\n  title: { text: 'Doanh Thu theo Tháng', textStyle: { color: '#0f172a', fontSize: 13, fontWeight: 700 } },\n  tooltip: { trigger: 'axis', valueFormatter: v => new Intl.NumberFormat('vi-VN').format(v) },\n  grid: { left: '4%', right: '4%', bottom: '10%', top: '16%', containLabel: true },\n  xAxis: {\n    type: 'category',\n    data: categories,\n    axisLabel: { color: '#64748b' }\n  },\n  yAxis: {\n    type: 'value',\n    splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },\n    axisLabel: { color: '#64748b' }\n  },\n  series: [\n    {\n      name: 'Doanh Thu',\n      type: 'bar',\n      data: values,\n      itemStyle: {\n        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [\n          { offset: 0, color: '#0284c7' },\n          { offset: 1, color: '#0369a1' }\n        ]),\n        borderRadius: [4, 4, 0, 0]\n      }\n    }\n  ]\n};","tabId":"tab_page_1","pos":{"x":615,"y":24,"w":560,"h":360,"zIndex":10},"hideHeader":true},{"id":"chart_1791447898572","type":"chart","name":"Biểu Đồ 1","dataSourceKey":"Du_Lieu_Mau_Kinh_Doanh.xlsx::BaoCaoDoanhSo","code":"// Nhóm và tính tổng giá trị theo danh mục\nconst grouped = {};\ndata.forEach(row => {\n  const cat = String(row['Nhóm Sản Phẩm'] || 'Khác');\n  const val = Number(row['Doanh Thu']) || 0;\n  grouped[cat] = (grouped[cat] || 0) + val;\n});\n\nconst pieData = Object.keys(grouped).map(cat => ({\n  name: cat,\n  value: grouped[cat]\n}));\n\nreturn {\n  title: { text: 'Tỷ Trọng Doanh Thu Theo Nhóm Sản Phẩm', textStyle: { color: '#0f172a', fontSize: 13, fontWeight: 700 } },\n  tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },\n  legend: { bottom: '5%', textStyle: { color: '#64748b' } },\n  series: [\n    {\n      name: 'Nhóm Sản Phẩm',\n      type: 'pie',\n      radius: ['45%', '70%'],\n      avoidLabelOverlap: true,\n      itemStyle: { borderRadius: 6, borderColor: '#ffffff', borderWidth: 2 },\n      label: { show: false },\n      data: pieData\n    }\n  ]\n};","tabId":"tab_1791447887213","pos":{"x":30,"y":30,"w":560,"h":360,"zIndex":10},"hideHeader":false},{"id":"chart_1791457009942","type":"chart","name":"Biểu Đồ 3","dataSourceKey":"Du_Lieu_Mau_Kinh_Doanh.xlsx::BaoCaoDoanhSo","code":"const categories = data.map(row => row['Tháng']);\nconst values = data.map(row => Number(row['Doanh Thu']) || 0);\n\nreturn {\n  title: { text: 'Doanh Thu Vùng Phủ', textStyle: { color: '#0f172a', fontSize: 13, fontWeight: 700 } },\n  tooltip: { trigger: 'axis', valueFormatter: v => new Intl.NumberFormat('vi-VN').format(v) },\n  grid: { left: '4%', right: '4%', bottom: '10%', top: '16%', containLabel: true },\n  xAxis: { type: 'category', data: categories, axisLabel: { color: '#64748b' } },\n  yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } }, axisLabel: { color: '#64748b' } },\n  series: [\n    {\n      name: 'Doanh Thu',\n      type: 'line',\n      smooth: true,\n      data: values,\n      itemStyle: { color: '#f97316' },\n      areaStyle: {\n        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [\n          { offset: 0, color: 'rgba(249, 115, 22, 0.45)' },\n          { offset: 1, color: 'rgba(249, 115, 22, 0.02)' }\n        ])\n      }\n    }\n  ]\n};","tabId":"tab_page_1","pos":{"x":55,"y":415,"w":560,"h":360,"zIndex":10},"hideHeader":false},{"id":"chart_1791470542687","type":"chart","name":"Biểu Đồ 4","dataSourceKey":"Du_Lieu_Mau_Kinh_Doanh.xlsx::BaoCaoDoanhSo","code":"// 💡 Hướng dẫn lấy dữ liệu Excel trong code:\n// - Biến 'data': Mảng dòng mặc định từ Sheet đầu tiên đã nạp.\n// - Lấy sheet bất kỳ: const rows = getSheet('TênSheet');\n// - Lấy file cụ thể: const rows = files['TenFile.xlsx']['TênSheet'];\n\nconst categories = data.map(row => row['Tháng']);\nconst values = data.map(row => Number(row['Doanh Thu']) || 0);\n\nreturn {\n  title: { text: 'Doanh Thu theo Tháng', textStyle: { color: '#0f172a', fontSize: 13, fontWeight: 700 } },\n  tooltip: { trigger: 'axis', valueFormatter: v => new Intl.NumberFormat('vi-VN').format(v) },\n  grid: { left: '4%', right: '4%', bottom: '10%', top: '16%', containLabel: true },\n  xAxis: {\n    type: 'category',\n    data: categories,\n    axisLabel: { color: '#64748b' }\n  },\n  yAxis: {\n    type: 'value',\n    splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },\n    axisLabel: { color: '#64748b' }\n  },\n  series: [\n    {\n      name: 'Doanh Thu',\n      type: 'bar',\n      data: values,\n      itemStyle: {\n        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [\n          { offset: 0, color: '#0284c7' },\n          { offset: 1, color: '#0369a1' }\n        ]),\n        borderRadius: [4, 4, 0, 0]\n      }\n    }\n  ]\n};","tabId":"tab_page_1","pos":{"x":482,"y":415,"w":560,"h":360,"zIndex":10},"hideHeader":true},{"id":"chart_1791470608401","type":"chart","name":"Biểu Đồ 2","dataSourceKey":"Du_Lieu_Mau_Kinh_Doanh.xlsx::BaoCaoDoanhSo","code":"// 💡 Hướng dẫn lấy dữ liệu Excel trong code:\n// - Biến 'data': Mảng dòng mặc định từ Sheet đầu tiên đã nạp.\n// - Lấy sheet bất kỳ: const rows = getSheet('TênSheet');\n// - Lấy file cụ thể: const rows = files['TenFile.xlsx']['TênSheet'];\n\nconst categories = data.map(row => row['Tháng']);\nconst values = data.map(row => Number(row['Doanh Thu']) || 0);\n\nreturn {\n  title: { text: 'Doanh Thu theo Tháng', textStyle: { color: '#0f172a', fontSize: 13, fontWeight: 700 } },\n  tooltip: { trigger: 'axis', valueFormatter: v => new Intl.NumberFormat('vi-VN').format(v) },\n  grid: { left: '4%', right: '4%', bottom: '10%', top: '16%', containLabel: true },\n  xAxis: {\n    type: 'category',\n    data: categories,\n    axisLabel: { color: '#64748b' }\n  },\n  yAxis: {\n    type: 'value',\n    splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },\n    axisLabel: { color: '#64748b' }\n  },\n  series: [\n    {\n      name: 'Doanh Thu',\n      type: 'bar',\n      data: values,\n      itemStyle: {\n        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [\n          { offset: 0, color: '#0284c7' },\n          { offset: 1, color: '#0369a1' }\n        ]),\n        borderRadius: [4, 4, 0, 0]\n      }\n    }\n  ]\n};","tabId":"tab_1791447887213","pos":{"x":30,"y":414,"w":560,"h":360,"zIndex":10}}],"dataSourcesNeeded":["Du_Lieu_Mau_Kinh_Doanh.xlsx"],"sheetsNeeded":{"Du_Lieu_Mau_Kinh_Doanh.xlsx":["BaoCaoDoanhSo"]},"version":"2.0","embeddedData":{"Du_Lieu_Mau_Kinh_Doanh.xlsx":{"BaoCaoDoanhSo":[{"Tháng":"T1/2026","Khu Vực":"Miền Bắc","Nhóm Sản Phẩm":"Điện tử","Doanh Thu":125000000,"Lợi Nhuận":28000000,"Chi Phí":97000000,"Số Đơn Hàng":450},{"Tháng":"T2/2026","Khu Vực":"Miền Bắc","Nhóm Sản Phẩm":"Gia dụng","Doanh Thu":98000000,"Lợi Nhuận":19500000,"Chi Phí":78500000,"Số Đơn Hàng":380},{"Tháng":"T3/2026","Khu Vực":"Miền Nam","Nhóm Sản Phẩm":"Điện tử","Doanh Thu":165000000,"Lợi Nhuận":39000000,"Chi Phí":126000000,"Số Đơn Hàng":610},{"Tháng":"T4/2026","Khu Vực":"Miền Nam","Nhóm Sản Phẩm":"Thời trang","Doanh Thu":112000000,"Lợi Nhuận":34000000,"Chi Phí":78000000,"Số Đơn Hàng":520},{"Tháng":"T5/2026","Khu Vực":"Miền Trung","Nhóm Sản Phẩm":"Gia dụng","Doanh Thu":87000000,"Lợi Nhuận":16000000,"Chi Phí":71000000,"Số Đơn Hàng":290},{"Tháng":"T6/2026","Khu Vực":"Miền Bắc","Nhóm Sản Phẩm":"Thời trang","Doanh Thu":142000000,"Lợi Nhuận":41000000,"Chi Phí":101000000,"Số Đơn Hàng":580},{"Tháng":"T7/2026","Khu Vực":"Miền Nam","Nhóm Sản Phẩm":"Điện tử","Doanh Thu":195000000,"Lợi Nhuận":48000000,"Chi Phí":147000000,"Số Đơn Hàng":720},{"Tháng":"T8/2026","Khu Vực":"Miền Trung","Nhóm Sản Phẩm":"Điện tử","Doanh Thu":105000000,"Lợi Nhuận":22000000,"Chi Phí":83000000,"Số Đơn Hàng":360}]}},"schema":"vnd.antigravity.dashboard.v2","tabBarConfig":{"position":"top","collapsed":false,"style":"pills","size":"normal","accentColor":"#0284c7","showIndex":false,"showCloseBtn":true,"verticalWidth":230},"activeFilters":{}};
+    let FILES = {"Du_Lieu_Mau_Kinh_Doanh.xlsx":{"BaoCaoDoanhSo":[{"Tháng":"T1/2026","Khu Vực":"Miền Bắc","Nhóm Sản Phẩm":"Điện tử","Doanh Thu":125000000,"Lợi Nhuận":28000000,"Chi Phí":97000000,"Số Đơn Hàng":450},{"Tháng":"T2/2026","Khu Vực":"Miền Bắc","Nhóm Sản Phẩm":"Gia dụng","Doanh Thu":98000000,"Lợi Nhuận":19500000,"Chi Phí":78500000,"Số Đơn Hàng":380},{"Tháng":"T3/2026","Khu Vực":"Miền Nam","Nhóm Sản Phẩm":"Điện tử","Doanh Thu":165000000,"Lợi Nhuận":39000000,"Chi Phí":126000000,"Số Đơn Hàng":610},{"Tháng":"T4/2026","Khu Vực":"Miền Nam","Nhóm Sản Phẩm":"Thời trang","Doanh Thu":112000000,"Lợi Nhuận":34000000,"Chi Phí":78000000,"Số Đơn Hàng":520},{"Tháng":"T5/2026","Khu Vực":"Miền Trung","Nhóm Sản Phẩm":"Gia dụng","Doanh Thu":87000000,"Lợi Nhuận":16000000,"Chi Phí":71000000,"Số Đơn Hàng":290},{"Tháng":"T6/2026","Khu Vực":"Miền Bắc","Nhóm Sản Phẩm":"Thời trang","Doanh Thu":142000000,"Lợi Nhuận":41000000,"Chi Phí":101000000,"Số Đơn Hàng":580},{"Tháng":"T7/2026","Khu Vực":"Miền Nam","Nhóm Sản Phẩm":"Điện tử","Doanh Thu":195000000,"Lợi Nhuận":48000000,"Chi Phí":147000000,"Số Đơn Hàng":720},{"Tháng":"T8/2026","Khu Vực":"Miền Trung","Nhóm Sản Phẩm":"Điện tử","Doanh Thu":105000000,"Lợi Nhuận":22000000,"Chi Phí":83000000,"Số Đơn Hàng":360}]}};
+    let activeTabId = CONFIG.activeTabId || (CONFIG.tabs && CONFIG.tabs[0] ? CONFIG.tabs[0].id : 'default');
+    const activeFilters = { ...(CONFIG.activeFilters || {}) };
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function parseDateToTimestamp(val) {
+      if (val === null || val === undefined || val === '') return null;
+      if (val instanceof Date) return isNaN(val.getTime()) ? null : new Date(val.getFullYear(), val.getMonth(), val.getDate()).getTime();
+      if (typeof val === 'number') {
+        if (val > 1000 && val < 100000) {
+          const utcDays = Math.floor(val - 25569);
+          const d = new Date(utcDays * 86400 * 1000);
+          return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        }
+        if (val > 1000000000000) {
+          const d = new Date(val);
+          return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        }
+      }
+      const s = String(val).trim();
+      const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+      if (dmy) return new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10)).getTime();
+      const ymd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+      if (ymd) return new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[1], 10)).getTime();
+
+      if (/^\d{1,7}$/.test(s) || /^\d{9,}$/.test(s)) return null;
+
+      const p = Date.parse(s);
+      if (!isNaN(p)) {
+        const d = new Date(p);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      }
+      return null;
+    }
+
+    function formatDateToYMD(val) {
+      if (!val) return '';
+      const ts = parseDateToTimestamp(val);
+      if (!ts) return '';
+      const d = new Date(ts);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function isProbableDateColumn(colName, rows = []) {
+      if (!colName) return false;
+      const lower = String(colName).toLowerCase();
+      if (lower.includes('ngày') || lower.includes('ngay') || lower.includes('date') || lower.includes('time') || lower.includes('thời gian') || lower.includes('thoi_gian')) {
+        return true;
+      }
+      if (!rows || rows.length === 0) return false;
+      let validDateCount = 0;
+      let checkedCount = 0;
+      for (let i = 0; i < Math.min(rows.length, 20); i++) {
+        const v = rows[i][colName];
+        if (v !== undefined && v !== null && v !== '') {
+          checkedCount++;
+          if (parseDateToTimestamp(v) !== null) validDateCount++;
+        }
+      }
+      return checkedCount > 0 && (validDateCount / checkedCount) >= 0.6;
+    }
+
+    function getData(sourceKey) {
+      if (!sourceKey) {
+        const firstFile = Object.keys(FILES)[0];
+        if (!firstFile) return [];
+        const firstSheet = Object.keys(FILES[firstFile])[0];
+        return FILES[firstFile][firstSheet] || [];
+      }
+      const parts = sourceKey.split('::');
+      const fileName = parts[0];
+      const sheetName = parts[1];
+      if (FILES[fileName] && FILES[fileName][sheetName]) {
+        return FILES[fileName][sheetName];
+      }
+      for (const f in FILES) {
+        if (FILES[f][sheetName]) return FILES[f][sheetName];
+      }
+      const firstF = Object.keys(FILES)[0];
+      if (firstF) {
+        const firstS = Object.keys(FILES[firstF])[0];
+        return FILES[firstF][firstS] || [];
+      }
+      return [];
+    }
+
+    function getFilteredData(sourceKey, excludeCols = []) {
+      let rows = getData(sourceKey);
+      if (!rows || rows.length === 0) return [];
+      const filterKeys = Object.keys(activeFilters).filter(k => !excludeCols.includes(k));
+      if (filterKeys.length === 0) return rows;
+
+      return rows.filter(row => {
+        for (const col of filterKeys) {
+          const filterVal = activeFilters[col];
+          if (!filterVal || row[col] === undefined) continue;
+
+          let op = '=';
+          let target = '';
+          let startDate = '';
+          let endDate = '';
+          let minVal = '';
+          let maxVal = '';
+          let valuesList = null;
+          let isDateFilter = false;
+
+          if (typeof filterVal === 'object' && filterVal !== null) {
+            op = filterVal.op || '=';
+            target = filterVal.val !== undefined ? filterVal.val : '';
+            startDate = filterVal.start || '';
+            endDate = filterVal.end || '';
+            minVal = filterVal.min !== undefined ? filterVal.min : (filterVal.start !== undefined ? filterVal.start : '');
+            maxVal = filterVal.max !== undefined ? filterVal.max : (filterVal.end !== undefined ? filterVal.end : '');
+            valuesList = Array.isArray(filterVal.values) ? filterVal.values : (Array.isArray(filterVal.val) ? filterVal.val : null);
+            isDateFilter = Boolean(filterVal.isDate || op === 'date_range' || op.startsWith('date_'));
+          } else {
+            target = filterVal;
+          }
+
+          const cell = row[col];
+          if (cell === undefined || cell === null) return false;
+
+          if (op === 'between' || op === 'range' || op === 'date_range') {
+            if (isDateFilter || op === 'date_range') {
+              const cellTs = parseDateToTimestamp(cell);
+              if (cellTs === null) return false;
+              const startTs = startDate ? parseDateToTimestamp(startDate) : (minVal ? parseDateToTimestamp(minVal) : null);
+              const endTs = endDate ? parseDateToTimestamp(endDate) : (maxVal ? parseDateToTimestamp(maxVal) : null);
+              if (startTs !== null && cellTs < startTs) return false;
+              if (endTs !== null && cellTs > endTs) return false;
+              continue;
+            }
+
+            const sMin = minVal !== undefined && minVal !== null ? String(minVal).trim() : '';
+            const sMax = maxVal !== undefined && maxVal !== null ? String(maxVal).trim() : '';
+            if (sMin === '' && sMax === '') continue;
+
+            const numCell = Number(cell);
+            const hasNumCell = !isNaN(numCell);
+            const numMin = sMin !== '' ? Number(sMin) : null;
+            const numMax = sMax !== '' ? Number(sMax) : null;
+
+            if (hasNumCell && ((numMin !== null && !isNaN(numMin)) || (numMax !== null && !isNaN(numMax)))) {
+              if (numMin !== null && !isNaN(numMin) && numCell < numMin) return false;
+              if (numMax !== null && !isNaN(numMax) && numCell > numMax) return false;
+              continue;
+            } else {
+              if (sMin !== '' && String(cell).toLowerCase() < sMin.toLowerCase()) return false;
+              if (sMax !== '' && String(cell).toLowerCase() > sMax.toLowerCase()) return false;
+              continue;
+            }
+          }
+
+          if (op === 'in' || valuesList !== null) {
+            const list = valuesList || [];
+            if (!list || list.length === 0 || list.includes('all')) continue;
+            const strCell = String(cell).trim().toLowerCase();
+            const match = list.some(item => String(item).trim().toLowerCase() === strCell);
+            if (!match) return false;
+            continue;
+          }
+
+          if (target === undefined || target === null || target === '' || target === 'all') {
+            continue;
+          }
+
+          if (isDateFilter) {
+            const cellTs = parseDateToTimestamp(cell);
+            if (cellTs === null) return false;
+            const targetTs = parseDateToTimestamp(target);
+            if (targetTs === null) continue;
+
+            if (op === 'date_eq' || op === '=') {
+              if (cellTs !== targetTs) return false;
+            } else if (op === 'date_gte' || op === '>=') {
+              if (cellTs < targetTs) return false;
+            } else if (op === 'date_lte' || op === '<=') {
+              if (cellTs > targetTs) return false;
+            } else if (op === '>') {
+              if (cellTs <= targetTs) return false;
+            } else if (op === '<') {
+              if (cellTs >= targetTs) return false;
+            }
+            continue;
+          }
+
+          const strCell = String(cell).toLowerCase();
+          const strTarget = String(target).toLowerCase();
+
+          if (op === 'contains') {
+            if (!strCell.includes(strTarget)) return false;
+            continue;
+          } else if (op === 'starts_with') {
+            if (!strCell.startsWith(strTarget)) return false;
+            continue;
+          } else if (op === 'ends_with') {
+            if (!strCell.endsWith(strTarget)) return false;
+            continue;
+          } else if (op === 'not_contains') {
+            if (strCell.includes(strTarget)) return false;
+            continue;
+          }
+
+          const numCell = Number(cell);
+          const numTarget = Number(target);
+          const isBothNumber = !isNaN(numCell) && !isNaN(numTarget) && String(target).trim() !== '';
+
+          if (op === '>') {
+            if (isBothNumber ? !(numCell > numTarget) : !(String(cell) > String(target))) return false;
+          } else if (op === '>=') {
+            if (isBothNumber ? !(numCell >= numTarget) : !(String(cell) >= String(target))) return false;
+          } else if (op === '<') {
+            if (isBothNumber ? !(numCell < numTarget) : !(String(cell) < String(target))) return false;
+          } else if (op === '<=') {
+            if (isBothNumber ? !(numCell <= numTarget) : !(String(cell) <= String(target))) return false;
+          } else if (op === '!=') {
+            if (isBothNumber ? (numCell === numTarget) : (String(cell).trim().toLowerCase() === String(target).trim().toLowerCase())) return false;
+          } else {
+            if (isBothNumber ? (numCell !== numTarget) : (String(cell).trim().toLowerCase() !== String(target).trim().toLowerCase())) return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    function getFilteredFilesObject() {
+      const filtered = {};
+      for (const f in FILES) {
+        filtered[f] = {};
+        for (const s in FILES[f]) {
+          filtered[f][s] = getFilteredData(f + '::' + s);
+        }
+      }
+      return filtered;
+    }
+
+    function evaluateEChartsCode(code, optionalData = null, context = {}) {
+      if (!code || !code.trim()) {
+        return { option: {}, error: 'Chưa có code JavaScript cấu hình.' };
+      }
+      try {
+        const allFiles = FILES;
+        const filteredFiles = getFilteredFilesObject();
+        let defaultData = optionalData;
+        if (defaultData === null || defaultData === undefined) {
+          defaultData = getFilteredData();
+        }
+        const getSheet = (sheetName, fileName = null) => {
+          if (fileName && filteredFiles[fileName] && filteredFiles[fileName][sheetName]) {
+            return filteredFiles[fileName][sheetName];
+          }
+          for (const f in filteredFiles) {
+            if (filteredFiles[f][sheetName]) return filteredFiles[f][sheetName];
+          }
+          return [];
+        };
+        const getRawSheet = (sheetName, fileName = null) => {
+          if (fileName && allFiles[fileName] && allFiles[fileName][sheetName]) {
+            return allFiles[fileName][sheetName];
+          }
+          for (const f in allFiles) {
+            if (allFiles[f][sheetName]) return allFiles[f][sheetName];
+          }
+          return [];
+        };
+        const getFile = (fileName) => {
+          return filteredFiles[fileName] || null;
+        };
+        const safeContext = {
+          setFilter: (col, val) => {
+            if (val === undefined || val === null || val === '' || val === 'all') {
+              delete activeFilters[col];
+            } else {
+              activeFilters[col] = val;
+            }
+            renderCanvas();
+          },
+          activeFilters,
+          rawFiles: allFiles,
+          getRawSheet,
+          ...context
+        };
+
+        const evalFunc = new Function('data', 'files', 'getSheet', 'getFile', 'context', 'echarts', 'XLSX', 'console', 'try { ' + code + ' } catch (e) { return { __error: e.stack || e.message }; }');
+
+        const result = evalFunc(defaultData, filteredFiles, getSheet, getFile, safeContext, window.echarts, window.XLSX, window.console);
+        if (result && result.__error) {
+          return { option: {}, error: result.__error };
+        }
+        if (!result || typeof result !== 'object') {
+          return { option: {}, error: 'Code phải return về một object option ECharts' };
+        }
+        return { option: result, error: null };
+      } catch (err) {
+        return { option: {}, error: err.message || String(err) };
+      }
+    }
+
+    function renderAllTabs() {
+      const tabsList = document.getElementById('dbTabsList');
+      if (!tabsList) return;
+      tabsList.innerHTML = '';
+      const cfg = CONFIG.tabBarConfig || {};
+      const accent = cfg.accentColor || '#0284c7';
+
+      (CONFIG.tabs || []).forEach((tab, index) => {
+        const pill = document.createElement('button');
+        const isActive = tab.id === activeTabId;
+        pill.className = 'db-tab-pill ' + (isActive ? 'active' : '');
+        if (isActive && accent) {
+          pill.style.backgroundColor = accent;
+          pill.style.borderColor = accent;
+        }
+        let inner = '';
+        if (cfg.showIndex) {
+          inner += '<span class="tab-index-badge">' + (index + 1) + '</span>';
+        }
+        inner += '<span class="tab-name-label">' + escapeHtml(tab.name) + '</span>';
+        pill.innerHTML = inner;
+
+        pill.addEventListener('click', () => {
+          activeTabId = tab.id;
+          renderAllTabs();
+          renderCanvas();
+        });
+        tabsList.appendChild(pill);
+      });
+    }
+
+    function renderCanvas() {
+      const canvas = document.getElementById('dashboardCanvas');
+      if (!canvas) return;
+      canvas.innerHTML = '';
+
+      // 2 Vạch Ranh Giới Dashboard
+      const leftGuide = document.createElement('div');
+      leftGuide.className = 'db-canvas-boundary-guide is-left';
+      canvas.appendChild(leftGuide);
+
+      const rightGuide = document.createElement('div');
+      rightGuide.className = 'db-canvas-boundary-guide is-right';
+      canvas.appendChild(rightGuide);
+
+      const currentTabItems = (CONFIG.items || []).filter(i => i.tabId === activeTabId);
+
+      let maxBottom = 800;
+      currentTabItems.forEach(item => {
+        const b = (item.pos?.y || 0) + (item.pos?.h || 0);
+        if (b > maxBottom) maxBottom = b;
+      });
+      const finalH = maxBottom + 60;
+      canvas.style.minHeight = finalH + 'px';
+      canvas.dataset.originalHeight = finalH;
+
+      currentTabItems.forEach(item => {
+        const el = document.createElement('div');
+        const isHideHeader = Boolean(item.hideHeader);
+        const isFramelessType = ['shape', 'heading', 'text', 'image'].includes(item.type);
+        const shapeSubclass = item.type === 'shape' ? (item.shapeType === 'line' ? 'is-shape-line' : 'is-shape') : '';
+
+        el.className = 'db-item-box ' +
+          (item.type === 'frame' ? 'is-frame ' : '') +
+          (shapeSubclass ? shapeSubclass + ' ' : '') +
+          (isFramelessType ? 'is-frameless-element ' : '') +
+          ('is-type-' + item.type + ' ') +
+          (isHideHeader ? 'hide-header ' : '');
+
+        el.id = 'item_' + item.id;
+        el.style.left = (item.pos?.x || 24) + 'px';
+        el.style.top = (item.pos?.y || 24) + 'px';
+        el.style.width = (item.pos?.w || 400) + 'px';
+        el.style.height = (item.pos?.h || 300) + 'px';
+        if (item.pos?.zIndex) el.style.zIndex = item.pos.zIndex;
+
+        if (isFramelessType) {
+          el.innerHTML = '<div class="db-item-body" id="item_body_' + item.id + '" style="padding:0;height:100%;"></div>';
+        } else {
+          el.innerHTML = '<div class="db-item-header"><div class="db-item-header-left"><span class="db-item-title">' + escapeHtml(item.name || item.type) + '</span></div></div><div class="db-item-body" id="item_body_' + item.id + '"></div>';
+        }
+
+        canvas.appendChild(el);
+        renderItemContent(item);
+      });
+
+      updateCanvasTransform();
+    }
+
+    function renderItemContent(item) {
+      const body = document.getElementById('item_body_' + item.id);
+      if (!body) return;
+      body.innerHTML = '';
+
+      if (item.type === 'chart') {
+        const chartDiv = document.createElement('div');
+        chartDiv.className = 'db-chart-canvas';
+        chartDiv.id = 'chart_el_' + item.id;
+        body.appendChild(chartDiv);
+
+        setTimeout(() => {
+          let chart = echarts.getInstanceByDom(chartDiv);
+          if (chart) chart.dispose();
+          chart = echarts.init(chartDiv, null);
+
+          const data = getFilteredData(item.dataSourceKey);
+          const { option, error } = evaluateEChartsCode(item.code, data);
+
+          if (error) {
+            chartDiv.innerHTML = '<div class="db-chart-error-banner">⚠️ Lỗi render ECharts:<br/>' + escapeHtml(error) + '</div>';
+          } else if (option) {
+            chart.setOption(option, true);
+          }
+        }, 30);
+      } else if (item.type === 'shape') {
+        const sType = item.shapeType || 'rectangle';
+        const bg = item.bgColor || '#ffffff';
+        const borderW = item.borderWidth !== undefined ? item.borderWidth : 1;
+        const borderS = item.borderStyle || 'solid';
+        const borderC = item.borderColor || '#cbd5e1';
+        const border = borderW > 0 && borderS !== 'none' ? (borderW + 'px ' + borderS + ' ' + borderC) : 'none';
+        const opacity = item.opacity !== undefined ? (item.opacity / 100) : 1;
+        const shadow = item.boxShadow || 'none';
+
+        let radiusCss = (item.borderRadius !== undefined ? item.borderRadius : 8) + 'px';
+        if (item.radiusTL !== undefined) {
+          radiusCss = (item.radiusTL || 0) + 'px ' + (item.radiusTR || 0) + 'px ' + (item.radiusBR || 0) + 'px ' + (item.radiusBL || 0) + 'px';
+        }
+        if (sType === 'circle') radiusCss = '50%';
+
+        if (sType === 'line') {
+          const thickness = item.borderWidth || 2;
+          const color = item.borderColor || '#94a3b8';
+          const style = item.borderStyle || 'solid';
+          const cap = item.lineCap === 'round' ? '999px' : '0px';
+          const isVert = item.lineOrientation === 'vertical';
+
+          if (isVert) {
+            body.innerHTML = '<div style="width:100%;height:100%;display:flex;justify-content:center;align-items:center;padding:4px 0;"><div style="width:' + thickness + 'px;height:100%;background:' + (style === 'solid' ? color : 'transparent') + ';border-left:' + (style !== 'solid' ? (thickness + 'px ' + style + ' ' + color) : 'none') + ';border-radius:' + cap + ';box-shadow:' + shadow + ';opacity:' + opacity + ';"></div></div>';
+          } else {
+            body.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;padding:0 4px;"><div style="width:100%;height:' + thickness + 'px;background:' + (style === 'solid' ? color : 'transparent') + ';border-top:' + (style !== 'solid' ? (thickness + 'px ' + style + ' ' + color) : 'none') + ';border-radius:' + cap + ';box-shadow:' + shadow + ';opacity:' + opacity + ';"></div></div>';
+          }
+        } else {
+          body.innerHTML = '<div class="db-shape-container" style="background:' + bg + ';border:' + border + ';border-radius:' + radiusCss + ';opacity:' + opacity + ';box-shadow:' + shadow + ';"></div>';
+        }
+      } else if (item.type === 'text') {
+        const fFamily = item.fontFamily || 'Inter, sans-serif';
+        const fSize = item.fontSize || '14px';
+        const fWeight = item.fontWeight || 'normal';
+        const fStyle = item.fontStyle || 'normal';
+        const tDeco = item.textDecoration || 'none';
+        const tColor = item.color || '#0f172a';
+        const tAlign = item.textAlign || 'left';
+        const textVal = item.text !== undefined ? item.text : (item.name || '');
+
+        body.innerHTML = '<div style="height:100%;width:100%;padding:4px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-start;"><div class="db-text-container" style="font-family:' + fFamily + ';font-size:' + fSize + ';font-weight:' + fWeight + ';font-style:' + fStyle + ';text-decoration:' + tDeco + ';color:' + tColor + ';text-align:' + tAlign + ';white-space:pre-wrap;word-break:break-word;line-height:1.5;width:100%;min-height:100%;">' + escapeHtml(textVal) + '</div></div>';
+      } else if (item.type === 'heading') {
+        const fFamily = item.fontFamily || 'Inter, sans-serif';
+        const fSize = item.fontSize || '24px';
+        const fWeight = item.fontWeight || '700';
+        const fStyle = item.fontStyle || 'normal';
+        const tDeco = item.textDecoration || 'none';
+        const tColor = item.color || '#0f172a';
+        const tAlign = item.textAlign || 'left';
+        const textVal = item.text !== undefined ? item.text : (item.name || 'Tiêu Đề');
+
+        body.innerHTML = '<div style="height:100%;width:100%;display:flex;align-items:center;padding:4px;overflow:hidden;"><h2 style="margin:0;width:100%;font-family:' + fFamily + ';font-size:' + fSize + ';font-weight:' + fWeight + ';font-style:' + fStyle + ';text-decoration:' + tDeco + ';color:' + tColor + ';text-align:' + tAlign + ';word-break:break-word;line-height:1.3;">' + escapeHtml(textVal) + '</h2></div>';
+      } else if (item.type === 'kpi') {
+        const data = getFilteredData(item.dataSourceKey);
+        const numVals = data.map(r => Number(r[item.metricColumn])).filter(n => !isNaN(n));
+        let sum = 0;
+        if (item.aggregation === 'avg') {
+          sum = numVals.length > 0 ? (numVals.reduce((a, b) => a + b, 0) / numVals.length) : 0;
+        } else if (item.aggregation === 'count') {
+          sum = numVals.length;
+        } else if (item.aggregation === 'max') {
+          sum = numVals.length > 0 ? Math.max(...numVals) : 0;
+        } else if (item.aggregation === 'min') {
+          sum = numVals.length > 0 ? Math.min(...numVals) : 0;
+        } else {
+          sum = numVals.reduce((a, b) => a + b, 0);
+        }
+
+        const kpiFs = item.fontSize || '30px';
+        const kpiColor = item.color || '#0f172a';
+        body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;"><div style="font-size:11px;text-transform:uppercase;color:var(--db-text-sub);font-weight:700;margin-bottom:4px;">' + escapeHtml(item.name || 'KPI') + '</div><div style="font-size:' + escapeHtml(kpiFs) + ';font-weight:800;color:' + escapeHtml(kpiColor) + ';">' + escapeHtml(item.prefix || '') + new Intl.NumberFormat('vi-VN').format(Math.round(sum)) + escapeHtml(item.suffix || '') + '</div></div>';
+      } else if (item.type === 'button') {
+        const btnEl = document.createElement('div');
+        btnEl.className = 'db-action-btn-widget';
+        btnEl.style.cssText = 'background:' + (item.btnBg || '#004ea8') + ';color:' + (item.btnColor || '#ffffff') + ';border-radius:' + (item.borderRadius || 8) + 'px;font-size:' + (item.fontSize || '14px') + ';font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.08);';
+        btnEl.innerHTML = '<span>' + escapeHtml(item.name || 'Nút Bấm') + '</span>';
+        btnEl.addEventListener('click', () => {
+          if (item.btnAction === 'url' && item.btnTarget) {
+            window.open(item.btnTarget, '_blank');
+          } else if (item.btnAction === 'tab' && item.btnTarget) {
+            activeTabId = item.btnTarget;
+            renderAllTabs();
+            renderCanvas();
+          }
+        });
+        body.appendChild(btnEl);
+      } else if (item.type === 'frame') {
+        const bg = item.bgColor || 'rgba(255,255,255,0.4)';
+        const borderW = item.borderWidth !== undefined ? item.borderWidth : 2;
+        const borderS = item.borderStyle || 'dashed';
+        const borderC = item.borderColor || '#cbd5e1';
+        const border = borderW > 0 && borderS !== 'none' ? (borderW + 'px ' + borderS + ' ' + borderC) : 'none';
+        const radius = (item.borderRadius !== undefined ? item.borderRadius : 12) + 'px';
+        const shadow = item.boxShadow || 'none';
+        const opacity = item.opacity !== undefined ? (item.opacity / 100) : 1;
+
+        body.innerHTML = '<div class="db-frame-container" style="background:' + bg + ';border:' + border + ';border-radius:' + radius + ';box-shadow:' + shadow + ';opacity:' + opacity + ';padding:8px;font-size:12px;color:var(--db-text-sub);font-style:italic;">[Khung phân vùng: ' + escapeHtml(item.name) + ']</div>';
+      } else if (item.type === 'image') {
+        body.innerHTML = '<div class="db-image-widget"><img src="' + (item.imageUrl || '') + '" alt="' + escapeHtml(item.name || 'Ảnh') + '" style="border-radius:' + (item.borderRadius || 6) + 'px;object-fit:' + (item.fit || 'contain') + ';" /></div>';
+      } else if (item.type === 'filter') {
+        const col = item.filterColumn;
+        const allRows = getData(item.dataSourceKey);
+        const isDateCol = isProbableDateColumn(col, allRows);
+
+        let fType = item.filterType;
+        if (!fType) {
+          if (item.operator === 'between' || item.operator === 'range') fType = 'range';
+          else if (item.operator === 'in') fType = 'multiselect';
+          else if (item.operator === 'date_range' || String(item.operator).startsWith('date_') || isDateCol) fType = 'date';
+          else if (['contains', 'starts_with', 'ends_with', 'not_contains'].includes(item.operator)) fType = 'text';
+          else if (['>', '>=', '<', '<=', '!='].includes(item.operator)) fType = 'comparison';
+          else fType = isDateCol ? 'date' : 'range';
+        }
+
+        let parentItem = null;
+        if (item.parentFilterId) {
+          parentItem = (CONFIG.items || []).find(i => i.id === item.parentFilterId);
+        }
+
+        const availableRows = getFilteredData(item.dataSourceKey, [col]);
+        const uniqueVals = Array.from(new Set(availableRows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== ''))).sort((a, b) => {
+          const na = Number(a), nb = Number(b);
+          if (!isNaN(na) && !isNaN(nb)) return na - nb;
+          return String(a).localeCompare(String(b));
+        });
+
+        const filterState = activeFilters[col];
+        let currentOp = item.operator;
+        if (!currentOp) {
+          if (fType === 'range') currentOp = 'between';
+          else if (fType === 'multiselect') currentOp = 'in';
+          else if (fType === 'date') currentOp = 'date_range';
+          else if (fType === 'text') currentOp = 'contains';
+          else if (fType === 'comparison') currentOp = '>';
+          else currentOp = '=';
+        }
+
+        let currentVal = 'all';
+        let minVal = '';
+        let maxVal = '';
+        let startDate = '';
+        let endDate = '';
+        let selectedValues = [];
+
+        if (filterState) {
+          if (typeof filterState === 'object' && filterState !== null) {
+            currentOp = filterState.op || currentOp;
+            currentVal = filterState.val !== undefined ? filterState.val : 'all';
+            minVal = filterState.min !== undefined ? filterState.min : (filterState.start !== undefined ? filterState.start : '');
+            maxVal = filterState.max !== undefined ? filterState.max : (filterState.end !== undefined ? filterState.end : '');
+            startDate = filterState.start || filterState.min || '';
+            endDate = filterState.end || filterState.max || '';
+            selectedValues = Array.isArray(filterState.values) ? filterState.values : (Array.isArray(filterState.val) ? filterState.val : null);
+          } else {
+            currentVal = filterState;
+          }
+        }
+
+        if (fType === 'select' && currentVal !== 'all' && currentVal !== '' && typeof currentVal === 'string') {
+          if (uniqueVals.length > 0 && !uniqueVals.some(v => String(v) === String(currentVal))) {
+            delete activeFilters[col];
+            currentVal = 'all';
+          }
+        }
+
+        const isDate = fType === 'date' || (fType === 'range' && isDateCol);
+        const isNumberCol = !isDate && uniqueVals.some(v => !isNaN(Number(v)) && String(v).trim() !== '');
+
+        let isFiltering = false;
+        let activeBadgeHtml = '';
+
+        if (fType === 'range') {
+          if (isDate) {
+            isFiltering = Boolean(startDate || endDate);
+            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">📅 [' + (startDate || '...') + ' ➔ ' + (endDate || '...') + ']</span>';
+          } else {
+            isFiltering = Boolean(minVal !== '' || maxVal !== '');
+            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">↔️ [' + (minVal !== '' ? minVal : '-∞') + ' ➔ ' + (maxVal !== '' ? maxVal : '+∞') + ']</span>';
+          }
+        } else if (fType === 'multiselect') {
+          isFiltering = Boolean(selectedValues.length > 0 && selectedValues.length < uniqueVals.length);
+          if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">☑️ (' + selectedValues.length + ' mục)</span>';
+        } else if (fType === 'date') {
+          if (currentOp === 'date_range') {
+            isFiltering = Boolean(startDate || endDate);
+            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">📅 [' + (startDate || '...') + ' ➔ ' + (endDate || '...') + ']</span>';
+          } else {
+            isFiltering = Boolean(currentVal !== 'all' && currentVal !== '');
+            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">📅 ' + currentOp + ' ' + escapeHtml(currentVal) + '</span>';
+          }
+        } else {
+          isFiltering = Boolean(currentVal !== 'all' && currentVal !== '' && currentVal !== null && currentVal !== undefined);
+          if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">' + escapeHtml(currentOp) + ' ' + escapeHtml(currentVal) + '</span>';
+        }
+
+        let parentBadgeHtml = '';
+        if (parentItem) {
+          parentBadgeHtml = '<span class="db-filter-parent-badge" title="Bộ lọc phụ thuộc vào: ' + escapeHtml(parentItem.name || parentItem.filterColumn) + '">↳ Con: ' + escapeHtml(parentItem.name || parentItem.filterColumn) + '</span>';
+        }
+
+        let controlsHtml = '';
+        if (fType === 'range') {
+          if (isDate) {
+            controlsHtml = '<div class="db-filter-date-range-wrap">' +
+              '<input type="date" class="db-filter-date-input" id="filter_date_start_' + item.id + '" value="' + formatDateToYMD(startDate) + '" title="Từ ngày" />' +
+              '<span class="db-filter-date-sep">➔</span>' +
+              '<input type="date" class="db-filter-date-input" id="filter_date_end_' + item.id + '" value="' + formatDateToYMD(endDate) + '" title="Đến ngày" />' +
+              '</div>';
+          } else {
+            controlsHtml = '<div class="db-filter-range-wrap">' +
+              '<input type="' + (isNumberCol ? 'number' : 'text') + '" class="db-filter-range-input" id="filter_range_min_' + item.id + '" placeholder="Từ (Min)..." value="' + escapeHtml(minVal) + '" title="Giá trị nhỏ nhất" />' +
+              '<span class="db-filter-range-sep">➔</span>' +
+              '<input type="' + (isNumberCol ? 'number' : 'text') + '" class="db-filter-range-input" id="filter_range_max_' + item.id + '" placeholder="Đến (Max)..." value="' + escapeHtml(maxVal) + '" title="Giá trị lớn nhất" />' +
+              '</div>';
+          }
+        } else if (fType === 'comparison') {
+          controlsHtml = '<select class="db-filter-op-select" id="filter_op_' + item.id + '" title="Chọn phép so sánh" style="width:84px;">' +
+            '<option value=">" ' + (currentOp === '>' ? 'selected' : '') + '>&gt; Lớn hơn</option>' +
+            '<option value=">=" ' + (currentOp === '>=' ? 'selected' : '') + '>&ge; Lớn/bằng</option>' +
+            '<option value="<" ' + (currentOp === '<' ? 'selected' : '') + '>&lt; Bé hơn</option>' +
+            '<option value="<=" ' + (currentOp === '<=' ? 'selected' : '') + '>&le; Bé/bằng</option>' +
+            '<option value="=" ' + (currentOp === '=' ? 'selected' : '') + '>= Bằng</option>' +
+            '<option value="!=" ' + (currentOp === '!=' ? 'selected' : '') + '>≠ Khác</option>' +
+            '</select>' +
+            '<div style="flex:1;display:flex;gap:4px;min-width:0;">' +
+            '<input type="' + (isNumberCol ? 'number' : 'text') + '" class="db-filter-val-input" id="filter_val_' + item.id + '" placeholder="' + (isNumberCol ? 'Nhập số mốc...' : 'Giá trị...') + '" value="' + (currentVal !== 'all' ? escapeHtml(currentVal) : '') + '" list="filter_datalist_' + item.id + '" />' +
+            '<datalist id="filter_datalist_' + item.id + '">' +
+            uniqueVals.slice(0, 30).map(v => '<option value="' + escapeHtml(v) + '"></option>').join('') +
+            '</datalist></div>';
+        } else if (fType === 'multiselect') {
+          const countLabel = selectedValues.length === 0 ? ('Tất cả (' + uniqueVals.length + ')') : ('Đã chọn (' + selectedValues.length + ')');
+          controlsHtml = '<div class="db-filter-multiselect-container" id="filter_ms_container_' + item.id + '">' +
+            '<button type="button" class="db-filter-multiselect-btn" id="filter_ms_btn_' + item.id + '" title="Nhấp để chọn một hoặc nhiều mục">' +
+            '<span id="filter_ms_label_' + item.id + '">☑️ ' + escapeHtml(countLabel) + '</span>' +
+            '<span>▾</span></button>' +
+            '<div class="db-filter-multiselect-dropdown" id="filter_ms_drop_' + item.id + '">' +
+            '<input type="text" class="db-filter-multiselect-search" id="filter_ms_search_' + item.id + '" placeholder="🔍 Tìm giá trị..." />' +
+            '<div class="db-filter-multiselect-actions">' +
+            '<button type="button" class="db-filter-ms-action-btn" id="filter_ms_all_' + item.id + '">Chọn tất cả</button>' +
+            '<button type="button" class="db-filter-ms-action-btn" id="filter_ms_none_' + item.id + '">Bỏ chọn</button>' +
+            '</div><div class="db-filter-multiselect-list" id="filter_ms_list_' + item.id + '">' +
+            uniqueVals.map(v => '<label class="db-filter-multiselect-item"><input type="checkbox" value="' + escapeHtml(v) + '" ' + (selectedValues.map(String).includes(String(v)) ? 'checked' : '') + ' class="filter_ms_chk_' + item.id + '" /><span>' + escapeHtml(v) + '</span></label>').join('') +
+            '</div></div></div>';
+        } else if (fType === 'text') {
+          controlsHtml = '<select class="db-filter-op-select" id="filter_op_' + item.id + '" title="Chọn điều kiện tìm kiếm" style="width:84px;">' +
+            '<option value="contains" ' + (currentOp === 'contains' ? 'selected' : '') + '>Chứa</option>' +
+            '<option value="starts_with" ' + (currentOp === 'starts_with' ? 'selected' : '') + '>Bắt đầu</option>' +
+            '<option value="ends_with" ' + (currentOp === 'ends_with' ? 'selected' : '') + '>Kết thúc</option>' +
+            '<option value="not_contains" ' + (currentOp === 'not_contains' ? 'selected' : '') + '>K.chứa</option>' +
+            '<option value="=" ' + (currentOp === '=' ? 'selected' : '') + '>= Chuẩn</option>' +
+            '</select>' +
+            '<div style="flex:1;display:flex;gap:4px;min-width:0;">' +
+            '<input type="text" class="db-filter-val-input" id="filter_val_' + item.id + '" placeholder="Nhập từ khóa..." value="' + (currentVal !== 'all' ? escapeHtml(currentVal) : '') + '" />' +
+            '</div>';
+        } else if (fType === 'date') {
+          controlsHtml = '<select class="db-filter-op-select" id="filter_op_' + item.id + '" title="Chọn kiểu lọc ngày" style="width:105px;">' +
+            '<option value="date_range" ' + (currentOp === 'date_range' ? 'selected' : '') + '>📅 Khoảng</option>' +
+            '<option value="date_eq" ' + (currentOp === 'date_eq' ? 'selected' : '') + '>🎯 Đúng ngày</option>' +
+            '<option value="date_gte" ' + (currentOp === 'date_gte' ? 'selected' : '') + '>⏩ Từ ngày</option>' +
+            '<option value="date_lte" ' + (currentOp === 'date_lte' ? 'selected' : '') + '>⏪ Đến ngày</option>' +
+            '</select>' +
+            (currentOp === 'date_range' ? (
+              '<div class="db-filter-date-range-wrap">' +
+              '<input type="date" class="db-filter-date-input" id="filter_date_start_' + item.id + '" value="' + formatDateToYMD(startDate) + '" title="Từ ngày" />' +
+              '<span class="db-filter-date-sep">➔</span>' +
+              '<input type="date" class="db-filter-date-input" id="filter_date_end_' + item.id + '" value="' + formatDateToYMD(endDate) + '" title="Đến ngày" />' +
+              '</div>'
+            ) : (
+              '<div class="db-filter-date-range-wrap">' +
+              '<input type="date" class="db-filter-date-input" id="filter_date_val_' + item.id + '" value="' + formatDateToYMD(currentVal !== 'all' ? currentVal : '') + '" title="Chọn ngày" />' +
+              '</div>'
+            ));
+        } else {
+          controlsHtml = '<select class="db-filter-val-select" id="filter_val_' + item.id + '" title="Chọn giá trị từ Excel">' +
+            '<option value="all">-- Tất cả (' + uniqueVals.length + ') --</option>' +
+            uniqueVals.map(v => '<option value="' + escapeHtml(v) + '" ' + (String(v) === String(currentVal) ? 'selected' : '') + '>' + escapeHtml(v) + '</option>').join('') +
+            '</select>';
+        }
+
+        body.innerHTML = '<div class="db-filter-container">' +
+          '<div class="db-filter-header-row">' +
+          '<span class="db-filter-label" title="' + escapeHtml(item.name || col) + '">' + escapeHtml(item.name || col) + '</span>' +
+          '<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">' +
+          parentBadgeHtml +
+          activeBadgeHtml +
+          (isFiltering ? ('<button class="db-filter-reset-btn" id="filter_reset_' + item.id + '" title="Xóa bỏ điều kiện lọc này">✕</button>') : '') +
+          '</div></div>' +
+          '<div class="db-filter-controls-row">' +
+          controlsHtml +
+          '</div></div>';
+
+        setTimeout(() => {
+          const resetBtn = document.getElementById('filter_reset_' + item.id);
+          resetBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            delete activeFilters[col];
+            renderCanvas();
+          });
+
+          if (fType === 'range') {
+            if (isDate) {
+              const startInp = document.getElementById('filter_date_start_' + item.id);
+              const endInp = document.getElementById('filter_date_end_' + item.id);
+              const handleDateRange = () => {
+                const sVal = startInp ? startInp.value : '';
+                const eVal = endInp ? endInp.value : '';
+                if (!sVal && !eVal) delete activeFilters[col];
+                else activeFilters[col] = { op: 'date_range', start: sVal, end: eVal, isDate: true };
+                renderCanvas();
+              };
+              startInp?.addEventListener('change', handleDateRange);
+              endInp?.addEventListener('change', handleDateRange);
+            } else {
+              const minInp = document.getElementById('filter_range_min_' + item.id);
+              const maxInp = document.getElementById('filter_range_max_' + item.id);
+              const handleRange = () => {
+                const minV = minInp ? minInp.value.trim() : '';
+                const maxV = maxInp ? maxInp.value.trim() : '';
+                if (minV === '' && maxV === '') delete activeFilters[col];
+                else activeFilters[col] = { op: 'between', min: minV, max: maxV, start: minV, end: maxV };
+                renderCanvas();
+              };
+              minInp?.addEventListener('change', handleRange);
+              maxInp?.addEventListener('change', handleRange);
+              minInp?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleRange(); });
+              maxInp?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleRange(); });
+            }
+          } else if (fType === 'comparison') {
+            const opSel = document.getElementById('filter_op_' + item.id);
+            const valEl = document.getElementById('filter_val_' + item.id);
+            const applyComp = () => {
+              const op = opSel ? opSel.value : '=';
+              item.operator = op;
+              const val = valEl ? valEl.value.trim() : '';
+              if (val === '' || val === 'all') delete activeFilters[col];
+              else activeFilters[col] = { op, val };
+              renderCanvas();
+            };
+            opSel?.addEventListener('change', applyComp);
+            valEl?.addEventListener('change', applyComp);
+            valEl?.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                valEl.blur();
+                applyComp();
+              }
+            });
+          } else if (fType === 'multiselect') {
+            const btn = document.getElementById('filter_ms_btn_' + item.id);
+            const drop = document.getElementById('filter_ms_drop_' + item.id);
+            const searchInp = document.getElementById('filter_ms_search_' + item.id);
+            const chks = document.querySelectorAll('.filter_ms_chk_' + item.id);
+            const btnAll = document.getElementById('filter_ms_all_' + item.id);
+            const btnNone = document.getElementById('filter_ms_none_' + item.id);
+
+            btn?.addEventListener('click', (e) => {
+              e.stopPropagation();
+              document.querySelectorAll('.db-filter-multiselect-dropdown.open').forEach(d => {
+                if (d !== drop) d.classList.remove('open');
+              });
+              drop?.classList.toggle('open');
+              if (drop?.classList.contains('open')) searchInp?.focus();
+            });
+
+            drop?.addEventListener('click', (e) => e.stopPropagation());
+
+            searchInp?.addEventListener('input', (e) => {
+              const term = e.target.value.toLowerCase().trim();
+              document.querySelectorAll('#filter_ms_list_' + item.id + ' .db-filter-multiselect-item').forEach(label => {
+                const text = label.textContent.toLowerCase();
+                label.style.display = text.includes(term) ? 'flex' : 'none';
+              });
+            });
+
+            const applyMultiSelect = () => {
+              const checked = Array.from(document.querySelectorAll('.filter_ms_chk_' + item.id + ':checked')).map(c => c.value);
+              if (checked.length === 0 || checked.length === uniqueVals.length) delete activeFilters[col];
+              else activeFilters[col] = { op: 'in', values: checked, val: checked };
+              renderCanvas();
+            };
+
+            chks.forEach(c => c.addEventListener('change', applyMultiSelect));
+            btnAll?.addEventListener('click', () => { delete activeFilters[col]; renderCanvas(); });
+            btnNone?.addEventListener('click', () => { activeFilters[col] = { op: 'in', values: [], val: [] }; renderCanvas(); });
+          } else if (fType === 'text') {
+            const opSel = document.getElementById('filter_op_' + item.id);
+            const valEl = document.getElementById('filter_val_' + item.id);
+            const applyText = () => {
+              const op = opSel ? opSel.value : 'contains';
+              item.operator = op;
+              const val = valEl ? valEl.value.trim() : '';
+              if (val === '' || val === 'all') delete activeFilters[col];
+              else activeFilters[col] = { op, val };
+              renderCanvas();
+            };
+            opSel?.addEventListener('change', applyText);
+            valEl?.addEventListener('change', applyText);
+            valEl?.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                valEl.blur();
+                applyText();
+              }
+            });
+          } else if (fType === 'date') {
+            const opSel = document.getElementById('filter_op_' + item.id);
+            const startInp = document.getElementById('filter_date_start_' + item.id);
+            const endInp = document.getElementById('filter_date_end_' + item.id);
+            const singleInp = document.getElementById('filter_date_val_' + item.id);
+
+            const handleDateChange = () => {
+              const op = opSel ? opSel.value : 'date_range';
+              if (op === 'date_range') {
+                const sVal = startInp ? startInp.value : '';
+                const eVal = endInp ? endInp.value : '';
+                if (!sVal && !eVal) delete activeFilters[col];
+                else activeFilters[col] = { op: 'date_range', start: sVal, end: eVal, isDate: true };
+              } else {
+                const dVal = singleInp ? singleInp.value : '';
+                if (!dVal) delete activeFilters[col];
+                else activeFilters[col] = { op, val: dVal, isDate: true };
+              }
+              renderCanvas();
+            };
+
+            startInp?.addEventListener('change', handleDateChange);
+            endInp?.addEventListener('change', handleDateChange);
+            singleInp?.addEventListener('change', handleDateChange);
+            opSel?.addEventListener('change', (e) => {
+              item.operator = e.target.value;
+              renderCanvas();
+            });
+          } else {
+            const valSel = document.getElementById('filter_val_' + item.id);
+            valSel?.addEventListener('change', (e) => {
+              const v = e.target.value;
+              if (v === 'all') delete activeFilters[col];
+              else activeFilters[col] = { op: '=', val: v };
+              renderCanvas();
+            });
+          }
+        }, 0);
+      }
+    }
+
+    function updateCanvasTransform() {
+      const canvas = document.getElementById('dashboardCanvas');
+      if (!canvas) return;
+      const wrapper = canvas.parentElement || document.body;
+      const availW = wrapper.clientWidth || window.innerWidth;
+      const safePaddingX = 48;
+      const scale = Math.min(1.0, Math.max(0.2, (availW - safePaddingX) / 1360));
+      const origH = parseInt(canvas.dataset.originalHeight || '800', 10);
+
+      if (scale < 1.0) {
+        canvas.style.transform = 'scale(' + scale + ')';
+        canvas.style.transformOrigin = 'top center';
+        canvas.style.marginBottom = '-' + Math.round((origH * (1 - scale))) + 'px';
+      } else {
+        canvas.style.transform = 'none';
+        canvas.style.transformOrigin = 'top center';
+        canvas.style.marginBottom = '0px';
+      }
+      document.querySelectorAll('.db-chart-canvas').forEach(el => {
+        const c = echarts.getInstanceByDom(el);
+        if (c) c.resize();
+      });
+    }
+
+    // Dynamic Excel File Upload Handler
+    const viewerUploadBtn = document.getElementById('btnViewerUploadExcel');
+    const viewerFileInput = document.getElementById('viewerExcelFileInput');
+    viewerUploadBtn?.addEventListener('click', () => viewerFileInput?.click());
+    viewerFileInput?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetsData = {};
+
+          workbook.SheetNames.forEach(sName => {
+            sheetsData[sName] = XLSX.utils.sheet_to_json(workbook.Sheets[sName], { defval: '' });
+          });
+
+          FILES[file.name] = sheetsData;
+          renderCanvas();
+          alert('✓ Đã nạp thành công file Excel "' + file.name + '"! Toàn bộ biểu đồ đã được cập nhật.');
+        } catch (err) {
+          alert('Lỗi đọc file Excel: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    window.addEventListener('resize', updateCanvasTransform);
+    window.addEventListener('click', () => {
+      document.querySelectorAll('.db-filter-multiselect-dropdown.open').forEach(d => d.classList.remove('open'));
+    });
+
+    // Initial render
+    renderAllTabs();
+    renderCanvas();
+  </script>
+
+</body></html>

@@ -1,0 +1,1847 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Superset Dashboard & BI Studio (Apache ECharts JavaScript)</title>
+
+  <!-- Always enforce Light Mode Permanently -->
+  <script>
+    document.documentElement.setAttribute('data-theme', 'light');
+    window.addEventListener('DOMContentLoaded', () => {
+      document.documentElement.setAttribute('data-theme', 'light');
+    });
+  </script>
+
+  <!-- Google Fonts for Canva Text Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,400&family=Roboto:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+
+  <!-- Theme Stylesheet & Custom Dashboard CSS -->
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/dashboard-builder.css">
+
+  <!-- Core Data Storage (JSON format) -->
+  <script src="data/storage.js"></script>
+  <script src="js/json-storage.js"></script>
+
+  <!-- Apache ECharts Library (Offline Local + CDN Fallback) -->
+  <script src="js/echarts.min.js"></script>
+  <script>
+    if (typeof echarts === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- SheetJS Library for Excel / CSV Processing (Offline Local + CDN Fallback) -->
+  <script src="js/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- JSZip Library for Zip Packaging (Offline Local + CDN Fallback) -->
+  <script src="js/jszip.min.js"></script>
+  <script>
+    if (typeof JSZip === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>');
+    }
+  </script>
+</head>
+
+<body class="dashboard-app-body">
+
+  <!-- ====================================================================
+       1. TOP HEADER & TOOLBAR (STREAMLINED CORE CONTROLS)
+       ==================================================================== -->
+  <header class="db-header">
+    <div class="db-header-left">
+      <a href="index.html" class="db-btn-back" id="btnBackToHub" title="Quay lại Màn hình Quản lý Tools">
+        🏠 Hub Tools
+      </a>
+      <div class="db-title-container">
+        <input type="text" class="db-title-input" id="dashboardTitleInput" value="Báo Cáo Hoạt Động & Phân Tích Kinh Doanh" title="Click để chỉnh sửa tiêu đề Dashboard" />
+        <span class="db-dirty-badge saved" id="dirtyBadge">✓ Đã lưu</span>
+      </div>
+    </div>
+
+    <div class="db-header-right">
+
+      <!-- 1. Đẩy File Excel Nguồn (Hỗ trợ nạp cùng lúc nhiều file .xlsx, .xls, .csv) -->
+      <button class="db-btn-tool" id="btnUploadExcelFiles" style="background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%);color:#fff;border-color:#0284c7;font-weight:700;display:inline-flex;align-items:center;gap:6px;" title="Tải một hoặc nhiều file Excel (.xlsx, .xls, .csv) lên làm nguồn dữ liệu cho các biểu đồ">
+        📤 Nạp File Excel
+      </button>
+      <input type="file" id="excelHeaderFileInput" multiple accept=".xlsx,.xls,.csv" style="display:none;" />
+      <input type="file" id="imageElementFileInput" accept="image/*" style="display:none;" />
+
+      <!-- Chế độ Xem Trước (Preview Mode Toggle) -->
+      <button class="db-btn-tool" id="btnTogglePreview" title="Chuyển đổi giữa chế độ Thiết Kế và Xem Trước">
+        👁️ Xem Trước
+      </button>
+
+      <!-- 4. Nút Lưu Dashboard -->
+      <button class="db-btn-tool save-btn" id="btnSaveDashboardPackage" title="Lưu Dashboard vào thư mục máy tính (Lần đầu chọn thư mục, từ lần 2 tự động lưu trực tiếp)">
+        💾 Lưu
+      </button>
+
+      <!-- Hidden file inputs for import & folder picker -->
+      <input type="file" id="importUnifiedInput" accept=".json,.html,.htm,.zip" style="display:none;" />
+      <input type="file" id="folderPickerInput" webkitdirectory directory multiple style="display:none;" />
+      <input type="file" id="importJsonInput" accept=".json" style="display:none;" />
+    </div>
+  </header>
+
+  <!-- Nút Thoát Xem Trước Nổi (Chỉ hiện khi ở Chế độ Xem Trước) -->
+  <button class="db-floating-exit-preview" id="btnFloatingExitPreview" title="Thoát chế độ Xem Trước (Quay lại Thiết Kế)">
+    ✏️ Thoát Xem Trước
+  </button>
+
+  <!-- ====================================================================
+       2 & 4. STUDIO WORKSPACE CONTAINER (TABS BAR + CANVAS)
+       Hỗ trợ định vị thanh Tab ở 4 hướng: Top, Bottom, Left, Right
+       ==================================================================== -->
+  <div class="db-studio-container tabs-pos-top" id="dbStudioContainer">
+    <!-- 2. DASHBOARD TABS BAR -->
+    <section class="db-tabs-bar" id="dbTabsBar">
+      <div class="db-tabs-sidebar-header" id="dbTabsSidebarHeader" style="display:none;">
+        <span class="db-tabs-sidebar-title">📑 Trang Báo Cáo</span>
+      </div>
+
+      <div class="db-tabs-list" id="dbTabsList">
+        <!-- Tabs rendered dynamically -->
+      </div>
+
+      <div class="db-tabs-actions" id="dbTabsActions">
+        <button class="db-tab-add-btn" id="btnAddTab" title="Thêm Tab / Trang Dashboard mới">
+          <span class="db-tab-btn-icon">➕</span>
+          <span class="db-tab-btn-text">Thêm Tab</span>
+        </button>
+        <button class="db-tab-action-btn" id="btnConfigTabs" title="Cấu hình vị trí (4 hướng), thu gọn/mở rộng, kiểu dáng thanh Tab">
+          <span class="db-tab-btn-icon">⚙️</span>
+          <span class="db-tab-btn-text">Cấu Hình</span>
+        </button>
+        <button class="db-tab-action-btn db-tab-collapse-btn" id="btnCollapseTabsBar" title="Thu gọn hoặc Mở rộng thanh Tab">
+          <span class="db-collapse-icon" id="dbCollapseIcon">▲</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 4. DASHBOARD CANVAS STUDIO -->
+    <main class="db-canvas-wrapper" id="canvasWrapper">
+      <div class="db-canvas-viewport" id="canvasViewport">
+        <div class="db-canvas" id="dashboardCanvas">
+          <!-- Dynamically rendered Charts, Frames, and Widgets -->
+        </div>
+        <div class="db-snapping-guides" id="snappingGuides"></div>
+
+        <!-- Floating Canva-Style Text Toolbar for Selected Text / Heading Widgets -->
+        <div class="db-canva-text-toolbar" id="canvaTextToolbar" style="display:none;" data-current-item-id="">
+          <!-- Font Family Dropdown -->
+          <div class="ctt-group">
+            <select class="ctt-select" id="cttFontFamily" title="Font chữ">
+              <option value="Inter, sans-serif">Inter</option>
+              <option value="Roboto, sans-serif">Roboto</option>
+              <option value="Montserrat, sans-serif">Montserrat</option>
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="'Segoe UI', sans-serif">Segoe UI</option>
+              <option value="'Times New Roman', serif">Times New Roman</option>
+              <option value="Georgia, serif">Georgia</option>
+              <option value="'Playfair Display', serif">Playfair Display</option>
+              <option value="'Courier New', monospace">Courier New</option>
+              <option value="Consolas, monospace">Consolas</option>
+            </select>
+          </div>
+
+          <div class="ctt-divider"></div>
+
+          <!-- Font Size Controls (- input +) -->
+          <div class="ctt-group ctt-size-group">
+            <button class="ctt-btn" id="cttSizeDown" title="Giảm cỡ chữ (Ctrl + Shift + ,)">−</button>
+            <input type="number" class="ctt-input-number" id="cttFontSizeInput" value="20" min="8" max="140" title="Cỡ chữ (px)" />
+            <button class="ctt-btn" id="cttSizeUp" title="Tăng cỡ chữ (Ctrl + Shift + .)">+</button>
+          </div>
+
+          <div class="ctt-divider"></div>
+
+          <!-- Color Picker (Canva style A with color bar) -->
+          <div class="ctt-group">
+            <label class="ctt-btn ctt-color-picker-label" title="Màu chữ">
+              <span style="font-weight:800;font-size:13px;line-height:1;">A</span>
+              <span class="ctt-color-bar" id="cttColorIndicator" style="background:#0f172a;"></span>
+              <input type="color" id="cttColorPicker" value="#0f172a" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;" />
+            </label>
+          </div>
+
+          <div class="ctt-divider"></div>
+
+          <!-- Bold, Italic, Underline (Ctrl + B, I, U) -->
+          <div class="ctt-group">
+            <button class="ctt-btn" id="cttBoldBtn" title="In đậm (Ctrl + B)"><strong>B</strong></button>
+            <button class="ctt-btn" id="cttItalicBtn" title="In nghiêng (Ctrl + I)"><em>I</em></button>
+            <button class="ctt-btn" id="cttUnderlineBtn" title="Gạch chân (Ctrl + U)"><u>U</u></button>
+          </div>
+
+          <div class="ctt-divider"></div>
+
+          <!-- Text Alignment (Left, Center, Right, Justify) -->
+          <div class="ctt-group">
+            <button class="ctt-btn" id="cttAlignLeft" title="Căn trái" data-align="left">⯇</button>
+            <button class="ctt-btn" id="cttAlignCenter" title="Căn giữa" data-align="center">☰</button>
+            <button class="ctt-btn" id="cttAlignRight" title="Căn phải" data-align="right">⯈</button>
+            <button class="ctt-btn" id="cttAlignJustify" title="Căn đều hai bên" data-align="justify">⯎</button>
+          </div>
+
+          <div class="ctt-divider"></div>
+
+          <!-- Inline Edit Action -->
+          <div class="ctt-group">
+            <button class="ctt-btn ctt-edit-text-btn" id="cttEditTextBtn" title="Nhấp đúp hoặc bấm để sửa chữ trực tiếp trên Canvas">✏️ Sửa Chữ</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ====================================================================
+       4.1 FIGMA-STYLE FLOATING CANVAS TOOLBAR
+       Thanh điều khiển nổi di chuyển tự do & mở rộng / thu nhỏ kiểu Figma
+       Gồm: Thêm thành phần, Undo, Redo, Zoom, Chọn nền
+       ==================================================================== -->
+  <aside class="figma-floating-toolbar" id="figmaFloatingToolbar" role="toolbar" aria-label="Figma Studio Toolbar">
+    <!-- 1. Tay cầm kéo di chuyển tự do (Drag Grip) -->
+    <div class="fft-drag-grip" id="fftDragGrip" title="Nhấn giữ và kéo để di chuyển thanh công cụ tự do trên màn hình">
+      <span>⠿</span>
+    </div>
+
+    <!-- 2. Thành phần chính: Thêm Thành Phần (Luôn hiển thị kể cả khi thu nhỏ) -->
+    <div class="fft-main-action">
+      <div class="db-dropdown" id="dropdownAddElements">
+        <button class="db-btn-tool primary fft-btn-add" id="btnAddElementTrigger" title="Thêm Biểu đồ, Hình khối, Văn bản, Ảnh, Nút bấm (Kiểu Canva / Figma)">
+          ➕ Thêm Thành Phần ▾
+        </button>
+        <div class="db-dropdown-menu fft-compact-dropdown" id="menuAddElementsList">
+          <!-- Nhóm 1: Biểu đồ & Dữ liệu -->
+          <div class="db-menu-header">Biểu Đồ &amp; Dữ Liệu</div>
+          <button class="db-dropdown-item" id="menuAddChartCanvas" title="Thêm khung biểu đồ ECharts tương tác">
+            <span class="fft-item-icon">📊</span>
+            <span class="fft-item-text">Biểu Đồ (ECharts)</span>
+          </button>
+          <button class="db-dropdown-item" id="menuAddFilter" title="Dropdown bộ lọc động theo cột Excel cho Dashboard">
+            <span class="fft-item-icon">🔍</span>
+            <span class="fft-item-text">Bộ Lọc (Filter)</span>
+          </button>
+
+          <!-- Nhóm 2: Văn bản & Tiêu đề -->
+          <div class="db-menu-header">Văn Bản &amp; Tiêu Đề</div>
+          <button class="db-dropdown-item" id="menuAddHeading" title="Văn bản tiêu đề phân vùng báo cáo">
+            <span class="fft-item-icon">🔤</span>
+            <span class="fft-item-text">Tiêu Đề (Heading)</span>
+          </button>
+          <button class="db-dropdown-item" id="menuAddText" title="Đoạn văn bản giải thích hoặc chú thích số liệu">
+            <span class="fft-item-icon">📄</span>
+            <span class="fft-item-text">Đoạn Văn Bản</span>
+          </button>
+
+          <!-- Nhóm 3: Hình khối Canva / Figma -->
+          <div class="db-menu-header">Hình Khối</div>
+          <button class="db-dropdown-item" id="menuAddShapeRect" title="Khối hình nền, đổi màu, bo góc, viền trang trí">
+            <span class="fft-item-icon">⬜</span>
+            <span class="fft-item-text">Hình Chữ Nhật (Card)</span>
+          </button>
+          <button class="db-dropdown-item" id="menuAddShapeCircle" title="Điểm nhấn huy hiệu tròn hoặc hình học">
+            <span class="fft-item-icon">⚪</span>
+            <span class="fft-item-text">Hình Tròn / Elip</span>
+          </button>
+          <button class="db-dropdown-item" id="menuAddShapeLine" title="Đường kẻ phân tách các vùng thông tin">
+            <span class="fft-item-icon">➖</span>
+            <span class="fft-item-text">Đường Kẻ (Divider)</span>
+          </button>
+          <button class="db-dropdown-item" id="menuAddFrame" title="Khung viền bao quanh nhóm các biểu đồ">
+            <span class="fft-item-icon">🖼️</span>
+            <span class="fft-item-text">Khung Nhóm (Frame)</span>
+          </button>
+
+          <!-- Nhóm 4: Phương tiện & Tương tác -->
+          <div class="db-menu-header">Media &amp; Nút Bấm</div>
+          <button class="db-dropdown-item" id="menuAddImage" title="Tải ảnh PNG, JPG, SVG, WebP vào Canvas">
+            <span class="fft-item-icon">🌄</span>
+            <span class="fft-item-text">Đẩy Ảnh Lên</span>
+          </button>
+          <button class="db-dropdown-item" id="menuAddButton" title="Nút bấm chuyển tab hoặc mở đường dẫn web">
+            <span class="fft-item-icon">🔘</span>
+            <span class="fft-item-text">Nút Bấm (Button)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Nhóm Thu Nhỏ / Mở Rộng (Collapsible Group) -->
+    <div class="fft-collapsible-group" id="fftCollapsibleGroup">
+      <div class="fft-divider"></div>
+
+      <!-- Undo / Redo icon buttons -->
+      <div class="fft-btn-group">
+        <button class="fft-icon-btn" id="btnUndo" disabled title="Hoàn tác thao tác (Ctrl + Z)">↩</button>
+        <button class="fft-icon-btn" id="btnRedo" disabled title="Làm lại thao tác (Ctrl + Y)">↪</button>
+      </div>
+
+      <div class="fft-divider"></div>
+
+      <!-- Canvas Zoom Controls (Zoom to / nhỏ / 100% / Về ranh giới trên) -->
+      <div class="fft-zoom-group">
+        <button class="fft-zoom-btn" id="btnZoomOut" title="Thu nhỏ (Ctrl + -)">🔍−</button>
+        <span class="fft-zoom-badge" id="zoomLevelBadge">100%</span>
+        <button class="fft-zoom-btn" id="btnZoomIn" title="Phóng to (Ctrl + +)">🔍+</button>
+        <button class="fft-zoom-btn" id="btnZoomReset" title="Khôi phục 100% &amp; Căn Giữa">🎯</button>
+        <button class="fft-zoom-btn" id="btnFocusTopBoundary" title="Đưa về Ranh Giới Trên (Mép Trên 0px)">⬆️</button>
+      </div>
+
+      <div class="fft-divider"></div>
+
+      <!-- Đổi Kiểu Nền Canvas Dropdown -->
+      <div class="db-dropdown" id="dropdownCanvasBg">
+        <button class="db-btn-tool fft-btn-bg" id="btnCanvasBgTrigger" title="Đổi kiểu nền Dashboard (Trắng trơn, Chấm bi, Dọc kẻ, Lưới ô vuông)">
+          🎨 Nền ▾
+        </button>
+        <div class="db-dropdown-menu fft-compact-dropdown" style="min-width:150px;max-width:170px;">
+          <button class="db-dropdown-item" data-bg-type="white" title="Màu trắng phẳng tinh khôi">
+            <span class="db-bg-preview-swatch swatch-white"></span>
+            <span class="fft-item-text">Trắng Trơn</span>
+          </button>
+          <button class="db-dropdown-item" data-bg-type="dots" title="Họa tiết chấm bi hiện đại">
+            <span class="db-bg-preview-swatch swatch-dots"></span>
+            <span class="fft-item-text">Chấm Bi</span>
+          </button>
+          <button class="db-dropdown-item" data-bg-type="stripes" title="Đường kẻ sọc thẳng đứng">
+            <span class="db-bg-preview-swatch swatch-stripes"></span>
+            <span class="fft-item-text">Dọc Kẻ</span>
+          </button>
+          <button class="db-dropdown-item" data-bg-type="grid" title="Lưới caro kỹ thuật chuẩn">
+            <span class="db-bg-preview-swatch swatch-grid"></span>
+            <span class="fft-item-text">Lưới Ô Vuông</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Nút Thu nhỏ / Mở rộng (Collapse/Expand Toggle) -->
+    <button class="fft-collapse-btn" id="fftCollapseToggle" title="Thu nhỏ / Mở rộng thanh công cụ">
+      <span class="fft-collapse-icon">◀</span>
+    </button>
+  </aside>
+
+  <!-- ====================================================================
+       4.2 FIGMA-STYLE RIGHT PROPERTIES SIDEBAR
+       Thanh cấu hình chi tiết bên phải màn hình cho Hình Chữ Nhật, Hình Vuông,
+       Đường Kẻ, Hình Khối, Khung Phân Vùng và các thành phần trang trí
+       ==================================================================== -->
+  <aside class="figma-properties-sidebar" id="figmaPropertiesSidebar" style="display:none;" aria-label="Properties Inspector">
+    <!-- Header -->
+    <div class="fps-header">
+      <div class="fps-header-left">
+        <span class="fps-type-icon" id="fpsTypeIcon">🎨</span>
+        <div>
+          <div class="fps-title" id="fpsTitle">Thuộc Tính Thành Phần</div>
+          <div class="fps-subtitle" id="fpsSubtitle">Chưa chọn thành phần nào</div>
+        </div>
+      </div>
+      <div class="fps-header-actions">
+        <button class="fps-btn-icon" id="fpsBtnClose" title="Đóng bảng thuộc tính thành phần">✕</button>
+      </div>
+    </div>
+
+    <!-- Body Scrollable Content -->
+    <div class="fps-body" id="fpsBody">
+      <!-- ITEM / DECORATION PROPERTIES VIEW -->
+      <div class="fps-view-pane" id="fpsItemPropertiesView" style="display:flex;flex-direction:column;gap:16px;">
+        <!-- 0. TÊN / TIÊU ĐỀ THÀNH PHẦN -->
+        <div class="fps-section" id="fpsSectionGeneral">
+          <div class="fps-section-title">
+            <span>🏷️ Tên &amp; Tiêu Đề</span>
+          </div>
+          <div class="fps-field">
+            <input type="text" class="fps-input" id="fpsPropName" placeholder="Tên thành phần..." />
+          </div>
+          <div style="margin-top:6px;">
+            <label class="fps-toggle-row" style="cursor:pointer;">
+              <span class="fps-toggle-text" style="font-size:11.5px;">Ẩn thanh tiêu đề trên thẻ card</span>
+              <label class="fps-checkbox-toggle">
+                <input type="checkbox" id="fpsHideHeaderToggle" />
+                <span class="fps-toggle-switch"></span>
+              </label>
+            </label>
+          </div>
+        </div>
+
+        <!-- 1. KÍCH THƯỚC & VỊ TRÍ (LAYOUT / DIMENSIONS) -->
+        <div class="fps-section">
+          <div class="fps-section-title">
+            <span>📐 Kích Thước &amp; Vị Trí</span>
+          </div>
+          <div class="fps-grid-2">
+            <div class="fps-input-group">
+              <span class="fps-input-prefix">X</span>
+              <input type="number" class="fps-input" id="fpsPropX" />
+            </div>
+            <div class="fps-input-group">
+              <span class="fps-input-prefix">Y</span>
+              <input type="number" class="fps-input" id="fpsPropY" />
+            </div>
+            <div class="fps-input-group">
+              <span class="fps-input-prefix">W</span>
+              <input type="number" class="fps-input" id="fpsPropW" min="5" />
+            </div>
+            <div class="fps-input-group">
+              <span class="fps-input-prefix">H</span>
+              <input type="number" class="fps-input" id="fpsPropH" min="1" />
+            </div>
+          </div>
+
+          <!-- Tỷ lệ nhanh & Căn lề -->
+          <div class="fps-row-actions" style="margin-top:8px;">
+            <div class="fps-btn-group">
+              <button type="button" class="fps-mini-btn" id="fpsBtnPresetSquare" title="Đặt tỷ lệ vuông 1:1">1:1</button>
+              <button type="button" class="fps-mini-btn" id="fpsBtnPreset169" title="Đặt tỷ lệ 16:9">16:9</button>
+              <button type="button" class="fps-mini-btn" id="fpsBtnPreset43" title="Đặt tỷ lệ 4:3">4:3</button>
+            </div>
+            <div class="fps-btn-group">
+              <button type="button" class="fps-mini-btn" id="fpsBtnZUp" title="Đưa lên trên 1 lớp (Bring Forward)">🔼</button>
+              <button type="button" class="fps-mini-btn" id="fpsBtnZDown" title="Đưa xuống dưới 1 lớp (Send Backward)">🔽</button>
+              <button type="button" class="fps-mini-btn" id="fpsBtnToggleLock" title="Khóa / Mở khóa vị trí">🔓</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================================
+             CÁC SECTION CHUYÊN BIỆT THEO LOẠI THÀNH PHẦN (CHART, KPI, FILTER...)
+             ========================================================== -->
+
+        <!-- A. CẤU HÌNH BIỂU ĐỒ (CHART) -->
+        <div class="fps-section" id="fpsSectionChart" style="display:none;">
+          <div class="fps-section-title">
+            <span>📊 Cấu Hình Biểu Đồ ECharts</span>
+          </div>
+          <div class="fps-field">
+            <label class="fps-sub-label">Nguồn dữ liệu (File &amp; Sheet):</label>
+            <select class="fps-select" id="fpsChartSourceSelect"></select>
+          </div>
+          <div class="fps-field" style="margin-top:8px;">
+            <label class="fps-sub-label">Mẫu biểu đồ nhanh:</label>
+            <div class="fps-btn-group" style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:4px;">
+              <button type="button" class="fps-mini-btn" data-chart-preset="bar" title="Biểu đồ Cột">📊 Cột (Bar)</button>
+              <button type="button" class="fps-mini-btn" data-chart-preset="line" title="Biểu đồ Đường">📈 Đường (Line)</button>
+              <button type="button" class="fps-mini-btn" data-chart-preset="pie" title="Biểu đồ Tròn">🥧 Tròn (Pie)</button>
+              <button type="button" class="fps-mini-btn" data-chart-preset="area" title="Biểu đồ Miền">🌊 Miền (Area)</button>
+              <button type="button" class="fps-mini-btn" data-chart-preset="gauge" title="Đồng Hồ Đo">⏱️ Gauge</button>
+              <button type="button" class="fps-mini-btn" data-chart-preset="radar" title="Mạng Nhện">🕸️ Radar</button>
+              <button type="button" class="fps-mini-btn" data-chart-preset="funnel" title="Phễu Chuyển Đổi">🔻 Phễu</button>
+              <button type="button" class="fps-mini-btn" data-chart-preset="scatter" title="Tán Xạ">✨ Tán Xạ</button>
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <button type="button" class="fps-action-btn" id="fpsBtnOpenChartStudio" style="background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;">
+              🛠️ Mở Code Studio (Sửa Code JS &amp; Data)
+            </button>
+          </div>
+        </div>
+
+        <!-- B. CẤU HÌNH THẺ KPI -->
+        <div class="fps-section" id="fpsSectionKpi" style="display:none;">
+          <div class="fps-section-title">
+            <span>📈 Cấu Hình Thẻ Chỉ Số KPI</span>
+          </div>
+          <div class="fps-field">
+            <label class="fps-sub-label">Cột tính toán số liệu:</label>
+            <select class="fps-select" id="fpsKpiMetricSelect"></select>
+          </div>
+          <div class="fps-field" style="margin-top:8px;">
+            <label class="fps-sub-label">Phép toán tổng hợp:</label>
+            <select class="fps-select" id="fpsKpiAggregation">
+              <option value="sum">Tổng cộng (SUM)</option>
+              <option value="avg">Trung bình (AVERAGE)</option>
+              <option value="count">Đếm số dòng (COUNT)</option>
+              <option value="max">Giá trị lớn nhất (MAX)</option>
+              <option value="min">Giá trị nhỏ nhất (MIN)</option>
+            </select>
+          </div>
+          <div class="fps-grid-2" style="margin-top:8px;">
+            <div class="fps-field">
+              <label class="fps-sub-label">Tiền tố (Prefix):</label>
+              <input type="text" class="fps-input" id="fpsKpiPrefix" placeholder="vd: ₫, $" />
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Hậu tố (Suffix):</label>
+              <input type="text" class="fps-input" id="fpsKpiSuffix" placeholder="vd: %, đơn" />
+            </div>
+          </div>
+          <div class="fps-grid-2" style="margin-top:8px;">
+            <div class="fps-field">
+              <label class="fps-sub-label">Cỡ số KPI:</label>
+              <input type="text" class="fps-input" id="fpsKpiFontSize" placeholder="28px" />
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Màu số KPI:</label>
+              <div class="fps-color-row">
+                <label class="fps-color-picker-label">
+                  <input type="color" id="fpsKpiColorPicker" value="#0f172a" />
+                  <span class="fps-color-swatch" id="fpsKpiColorSwatch" style="background:#0f172a;"></span>
+                </label>
+                <input type="text" class="fps-input fps-hex-input" id="fpsKpiColorHex" value="#0F172A" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- C. CẤU HÌNH BỘ LỌC (FILTER) -->
+        <div class="fps-section" id="fpsSectionFilter" style="display:none;">
+          <div class="fps-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="display:flex;align-items:center;gap:6px;">
+              <span style="font-size:14px;">🔍</span>
+              <span>Bộ Lọc Dữ Liệu</span>
+            </span>
+            <span style="font-size:10px;padding:2px 6px;background:rgba(2,132,199,0.1);color:#0284c7;border-radius:4px;font-weight:700;">Interactive</span>
+          </div>
+
+          <div class="fps-field">
+            <label class="fps-sub-label">Cột dữ liệu lọc:</label>
+            <div style="position:relative;">
+              <select class="fps-select" id="fpsFilterColumnSelect" style="padding-left:28px;"></select>
+              <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;pointer-events:none;">📊</span>
+            </div>
+          </div>
+
+          <div class="fps-field">
+            <label class="fps-sub-label">Kiểu hiển thị bộ lọc:</label>
+            <select class="fps-select" id="fpsFilterTypeSelect">
+              <option value="date">📅 Khoảng Ngày (Date Range Picker)</option>
+              <option value="multiselect">☑️ Chọn Nhiều Mục (Multi-Select Checkbox)</option>
+              <option value="select">📋 Danh Sách Chọn 1 (Single Dropdown)</option>
+              <option value="range">↔️ Khoảng Số (Min ➔ Max Range)</option>
+              <option value="comparison">🔢 So Sánh 1 Mốc (&gt;, &ge;, &lt;, &le;, =, ≠)</option>
+              <option value="text">🔤 Tìm Kiếm Chữ (Text Keyword Search)</option>
+            </select>
+          </div>
+
+          <div class="fps-field" id="fpsFilterOpField">
+            <label class="fps-sub-label">Toán tử so sánh:</label>
+            <select class="fps-select" id="fpsFilterOpSelect"></select>
+          </div>
+
+          <div class="fps-field">
+            <label class="fps-sub-label">Bộ Lọc Cha (Liên Kết Cascading):</label>
+            <select class="fps-select" id="fpsFilterParentSelect">
+              <option value="">-- Không có (Bộ lọc độc lập) --</option>
+            </select>
+          </div>
+
+          <div class="fps-field" style="margin-top:12px;">
+            <button class="fps-filter-btn-hero" id="fpsBtnOpenFilterModal" title="Mở Studio cấu hình trực quan với live preview và bộ 6 kiểu lọc tiêu chuẩn">
+              <span>⚙️ Mở Filter Studio Đầy Đủ</span>
+              <span style="font-size:11px;opacity:0.8;">➔</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- D. CẤU HÌNH VĂN BẢN & TIÊU ĐỀ (TEXT / HEADING) -->
+        <div class="fps-section" id="fpsSectionText" style="display:none;">
+          <div class="fps-section-title">
+            <span>🔤 Nội Dung &amp; Font Chữ</span>
+          </div>
+          <div class="fps-field">
+            <label class="fps-sub-label">Nội dung chữ:</label>
+            <textarea class="fps-input" id="fpsTextContent" rows="3" style="resize:vertical;font-size:12.5px;"></textarea>
+          </div>
+          <div class="fps-grid-2" style="margin-top:8px;">
+            <div class="fps-field">
+              <label class="fps-sub-label">Cỡ chữ (Font Size):</label>
+              <input type="text" class="fps-input" id="fpsTextFontSize" placeholder="20px" />
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Độ đậm nét:</label>
+              <select class="fps-select" id="fpsTextFontWeight">
+                <option value="normal">Bình thường (400)</option>
+                <option value="600">Đậm vừa (600)</option>
+                <option value="700">Đậm (700)</option>
+                <option value="800">Rất đậm (800)</option>
+              </select>
+            </div>
+          </div>
+          <div class="fps-grid-2" style="margin-top:8px;">
+            <div class="fps-field">
+              <label class="fps-sub-label">Màu chữ:</label>
+              <div class="fps-color-row">
+                <label class="fps-color-picker-label">
+                  <input type="color" id="fpsTextColorPicker" value="#0f172a" />
+                  <span class="fps-color-swatch" id="fpsTextColorSwatch" style="background:#0f172a;"></span>
+                </label>
+                <input type="text" class="fps-input fps-hex-input" id="fpsTextColorHex" value="#0F172A" />
+              </div>
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Căn lề chữ:</label>
+              <select class="fps-select" id="fpsTextAlign">
+                <option value="left">Căn Trái</option>
+                <option value="center">Căn Giữa</option>
+                <option value="right">Căn Phải</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- E. CẤU HÌNH NÚT BẤM (BUTTON) -->
+        <div class="fps-section" id="fpsSectionButton" style="display:none;">
+          <div class="fps-section-title">
+            <span>🔘 Cấu Hình Nút Bấm</span>
+          </div>
+          <div class="fps-field">
+            <label class="fps-sub-label">Nhãn nút:</label>
+            <input type="text" class="fps-input" id="fpsButtonLabel" />
+          </div>
+          <div class="fps-grid-2" style="margin-top:8px;">
+            <div class="fps-field">
+              <label class="fps-sub-label">Màu nền nút:</label>
+              <div class="fps-color-row">
+                <label class="fps-color-picker-label">
+                  <input type="color" id="fpsButtonBgPicker" value="#004ea8" />
+                  <span class="fps-color-swatch" id="fpsButtonBgSwatch" style="background:#004ea8;"></span>
+                </label>
+                <input type="text" class="fps-input fps-hex-input" id="fpsButtonBgHex" value="#004EA8" />
+              </div>
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Màu chữ nút:</label>
+              <div class="fps-color-row">
+                <label class="fps-color-picker-label">
+                  <input type="color" id="fpsButtonColorPicker" value="#ffffff" />
+                  <span class="fps-color-swatch" id="fpsButtonColorSwatch" style="background:#ffffff;"></span>
+                </label>
+                <input type="text" class="fps-input fps-hex-input" id="fpsButtonColorHex" value="#FFFFFF" />
+              </div>
+            </div>
+          </div>
+          <div class="fps-field" style="margin-top:8px;">
+            <label class="fps-sub-label">Bo góc nút (px):</label>
+            <input type="number" class="fps-input" id="fpsButtonRadius" min="0" max="40" value="8" />
+          </div>
+        </div>
+
+        <!-- F. CẤU HÌNH HÌNH ẢNH (IMAGE) -->
+        <div class="fps-section" id="fpsSectionImage" style="display:none;">
+          <div class="fps-section-title">
+            <span>🖼️ Cấu Hình Hình Ảnh</span>
+          </div>
+          <div class="fps-field">
+            <label class="fps-sub-label">Đường dẫn ảnh (URL / Base64):</label>
+            <input type="text" class="fps-input" id="fpsImageUrl" placeholder="https://..." />
+          </div>
+          <div style="margin-top:8px;">
+            <button type="button" class="fps-action-btn" id="fpsBtnUploadImage" style="background:#f1f5f9;color:var(--db-text-main);border:1px solid var(--db-card-border);display:flex;align-items:center;justify-content:center;gap:6px;">
+              📁 Tải Ảnh Từ Máy Tính
+            </button>
+          </div>
+          <div class="fps-grid-2" style="margin-top:8px;">
+            <div class="fps-field">
+              <label class="fps-sub-label">Hiển thị (Fit):</label>
+              <select class="fps-select" id="fpsImageFit">
+                <option value="contain">Vừa vặn (Contain)</option>
+                <option value="cover">Bao phủ (Cover)</option>
+                <option value="fill">Kéo giãn (Fill)</option>
+              </select>
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Bo góc (px):</label>
+              <input type="number" class="fps-input" id="fpsImageRadius" min="0" max="60" value="6" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. MÀU NỀN & ĐỘ TRONG SUỐT (FILL & OPACITY) -->
+        <div class="fps-section" id="fpsSectionFill">
+          <div class="fps-section-title">
+            <span>🎨 Màu Nền (Fill)</span>
+            <select class="fps-mini-select" id="fpsFillType">
+              <option value="solid">Màu Đơn</option>
+              <option value="transparent">Trong Suốt</option>
+              <option value="gradient">Gradient Nhẹ</option>
+            </select>
+          </div>
+
+          <div class="fps-color-row" id="fpsFillColorRow">
+            <label class="fps-color-picker-label">
+              <input type="color" id="fpsFillColorPicker" value="#ffffff" />
+              <span class="fps-color-swatch" id="fpsFillColorSwatch" style="background:#ffffff;"></span>
+            </label>
+            <input type="text" class="fps-input fps-hex-input" id="fpsFillColorHex" value="#FFFFFF" />
+          </div>
+
+          <!-- Preset Palettes -->
+          <div class="fps-palette-row">
+            <span class="fps-palette-dot" data-fill="#ffffff" style="background:#ffffff;border:1px solid #cbd5e1;" title="Trắng"></span>
+            <span class="fps-palette-dot" data-fill="#f8fafc" style="background:#f8fafc;border:1px solid #cbd5e1;" title="Xám nhạt Slate"></span>
+            <span class="fps-palette-dot" data-fill="#0f172a" style="background:#0f172a;" title="Đen Slate"></span>
+            <span class="fps-palette-dot" data-fill="#0284c7" style="background:#0284c7;" title="Xanh Dương"></span>
+            <span class="fps-palette-dot" data-fill="#38bdf8" style="background:#38bdf8;" title="Xanh Trời"></span>
+            <span class="fps-palette-dot" data-fill="#10b981" style="background:#10b981;" title="Xanh Lá"></span>
+            <span class="fps-palette-dot" data-fill="#f59e0b" style="background:#f59e0b;" title="Vàng Hổ Phách"></span>
+            <span class="fps-palette-dot" data-fill="#ef4444" style="background:#ef4444;" title="Đỏ"></span>
+            <span class="fps-palette-dot" data-fill="#8b5cf6" style="background:#8b5cf6;" title="Tím"></span>
+          </div>
+
+          <!-- Opacity Slider -->
+          <div class="fps-slider-row" style="margin-top:10px;">
+            <div class="fps-slider-label">
+              <span>Độ Mờ (Opacity):</span>
+              <span id="fpsOpacityVal">100%</span>
+            </div>
+            <input type="range" class="fps-range" id="fpsPropOpacity" min="5" max="100" value="100" />
+          </div>
+        </div>
+
+        <!-- 3. ĐƯỜNG VIỀN & NÉT (STROKE / BORDER) -->
+        <div class="fps-section" id="fpsSectionStroke">
+          <div class="fps-section-title">
+            <span>✏️ Viền (Stroke / Border)</span>
+          </div>
+
+          <div class="fps-color-row">
+            <label class="fps-color-picker-label">
+              <input type="color" id="fpsStrokeColorPicker" value="#cbd5e1" />
+              <span class="fps-color-swatch" id="fpsStrokeColorSwatch" style="background:#cbd5e1;"></span>
+            </label>
+            <input type="text" class="fps-input fps-hex-input" id="fpsStrokeColorHex" value="#CBD5E1" />
+          </div>
+
+          <div class="fps-grid-2" style="margin-top:8px;">
+            <div class="fps-field">
+              <label class="fps-sub-label">Độ dày viền:</label>
+              <div class="fps-input-group">
+                <input type="number" class="fps-input" id="fpsStrokeWidth" min="0" max="24" value="1" />
+                <span class="fps-input-suffix">px</span>
+              </div>
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Kiểu nét viền:</label>
+              <select class="fps-select" id="fpsStrokeStyle">
+                <option value="solid">── Nét Liền</option>
+                <option value="dashed">╌╌ Nét Đứt</option>
+                <option value="dotted">·· Chấm Bi</option>
+                <option value="none">Không Viền</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. BO GÓC (CORNER RADIUS) - Cho Rectangle, Square, Frame -->
+        <div class="fps-section" id="fpsSectionRadius">
+          <div class="fps-section-title">
+            <span>🔲 Bo Góc (Corner Radius)</span>
+            <button type="button" class="fps-mini-btn" id="fpsBtnToggleIndividualRadius" title="Bo góc riêng từng góc">4 Góc ⤢</button>
+          </div>
+
+          <div id="fpsSingleRadiusRow">
+            <div class="fps-slider-row">
+              <div class="fps-slider-label">
+                <span>Bán kính bo góc:</span>
+                <span id="fpsRadiusVal">8px</span>
+              </div>
+              <input type="range" class="fps-range" id="fpsPropRadius" min="0" max="100" value="8" />
+            </div>
+          </div>
+
+          <!-- 4 Góc riêng biệt -->
+          <div id="fpsIndividualRadiusRow" style="display:none;margin-top:8px;">
+            <div class="fps-grid-4">
+              <div class="fps-input-group" title="Góc Trên - Trái">
+                <span class="fps-input-prefix">⌜</span>
+                <input type="number" class="fps-input" id="fpsRadiusTL" min="0" max="100" value="8" />
+              </div>
+              <div class="fps-input-group" title="Góc Trên - Phải">
+                <span class="fps-input-prefix">⌝</span>
+                <input type="number" class="fps-input" id="fpsRadiusTR" min="0" max="100" value="8" />
+              </div>
+              <div class="fps-input-group" title="Góc Dưới - Phải">
+                <span class="fps-input-prefix">⌟</span>
+                <input type="number" class="fps-input" id="fpsRadiusBR" min="0" max="100" value="8" />
+              </div>
+              <div class="fps-input-group" title="Góc Dưới - Trái">
+                <span class="fps-input-prefix">⌞</span>
+                <input type="number" class="fps-input" id="fpsRadiusBL" min="0" max="100" value="8" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. TÙY BIẾN ĐƯỜNG KẺ (LINE / DIVIDER SPECIAL) - Chỉ hiện khi là Đường kẻ -->
+        <div class="fps-section" id="fpsSectionLine" style="display:none;">
+          <div class="fps-section-title">
+            <span>➖ Cấu Hình Đường Kẻ (Line)</span>
+          </div>
+
+          <div class="fps-grid-2">
+            <div class="fps-field">
+              <label class="fps-sub-label">Độ dày nét:</label>
+              <div class="fps-input-group">
+                <input type="number" class="fps-input" id="fpsLineThickness" min="1" max="24" value="2" />
+                <span class="fps-input-suffix">px</span>
+              </div>
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Đầu đường kẻ (Cap):</label>
+              <select class="fps-select" id="fpsLineCap">
+                <option value="round">Bo tròn</option>
+                <option value="square">Vuông vắn</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="fps-field" style="margin-top:8px;">
+            <label class="fps-sub-label">Hướng đường kẻ:</label>
+            <div class="fps-segmented-btn">
+              <button type="button" class="active" id="fpsLineOrientH">Ngang (Horizontal)</button>
+              <button type="button" id="fpsLineOrientV">Dọc (Vertical)</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. HIỆU ỨNG ĐỔ BÓNG (DROP SHADOW / EFFECTS) -->
+        <div class="fps-section" id="fpsSectionShadow">
+          <div class="fps-section-title">
+            <span>✨ Hiệu Ứng Đổ Bóng (Shadow)</span>
+            <label class="fps-checkbox-toggle">
+              <input type="checkbox" id="fpsShadowToggle" />
+              <span class="fps-toggle-switch"></span>
+            </label>
+          </div>
+
+          <div id="fpsShadowDetails" style="display:none;margin-top:8px;">
+            <div class="fps-btn-group" style="margin-bottom:8px;">
+              <button type="button" class="fps-mini-btn" data-shadow-preset="soft">Nhẹ</button>
+              <button type="button" class="fps-mini-btn" data-shadow-preset="medium">Vừa</button>
+              <button type="button" class="fps-mini-btn" data-shadow-preset="float">Nổi Cao</button>
+              <button type="button" class="fps-mini-btn" data-shadow-preset="glow">Phát Sáng</button>
+            </div>
+
+            <div class="fps-grid-2">
+              <div class="fps-input-group">
+                <span class="fps-input-prefix">Blur</span>
+                <input type="number" class="fps-input" id="fpsShadowBlur" min="0" max="60" value="12" />
+              </div>
+              <div class="fps-input-group">
+                <span class="fps-input-prefix">Spread</span>
+                <input type="number" class="fps-input" id="fpsShadowSpread" min="-20" max="40" value="0" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7. THÔNG TIN & THAO TÁC (PROPERTIES & ACTIONS) -->
+        <div class="fps-section">
+          <div class="fps-section-title">
+            <span>⚙️ Thông Tin &amp; Thao Tác</span>
+          </div>
+          <div class="fps-field">
+            <label class="fps-sub-label">Tên hiển thị:</label>
+            <input type="text" class="fps-input" id="fpsPropName2" placeholder="Tên thành phần..." />
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button type="button" class="fps-action-btn" id="fpsBtnDuplicate">📋 Nhân Bản</button>
+            <button type="button" class="fps-action-btn is-danger" id="fpsBtnDelete">🗑️ Xóa</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ====================================================================
+       4.3 TAB CONFIGURATION SIDEBAR (DEDICATED SEPARATE SIDEBAR)
+       Bảng cấu hình độc lập bên phải dành riêng cho Thanh Tab và Quản lý Danh Sách Tab
+       Tách biệt hoàn toàn với Bảng thuộc tính thành phần
+       ==================================================================== -->
+  <aside class="figma-properties-sidebar tab-config-sidebar" id="tabConfigSidebar" style="display:none;" aria-label="Tab Configuration Inspector">
+    <!-- Header -->
+    <div class="fps-header">
+      <div class="fps-header-left">
+        <span class="fps-type-icon" id="tabSidebarTypeIcon">📑</span>
+        <div>
+          <div class="fps-title" id="tabSidebarTitle">Cấu Hình Thanh Tab</div>
+          <div class="fps-subtitle" id="tabSidebarSubtitle">Vị trí 4 hướng &amp; Quản lý Tab</div>
+        </div>
+      </div>
+      <div class="fps-header-actions">
+        <button class="fps-btn-icon" id="tabSidebarBtnClose" title="Đóng bảng cấu hình thanh tab">✕</button>
+      </div>
+    </div>
+
+    <!-- Body Scrollable Content -->
+    <div class="fps-body" id="tabConfigSidebarBody">
+      <div class="fps-view-pane" id="fpsTabPropertiesView" style="display:flex;flex-direction:column;gap:16px;">
+        <!-- 1. VỊ TRÍ THANH TAB (4 HƯỚNG) -->
+        <div class="fps-section">
+          <div class="fps-section-title">
+            <span>🧭 Vị Trí Thanh Tab</span>
+            <span class="fps-badge-sub" id="fpsCurrentPosBadge">Trên Cùng</span>
+          </div>
+          <div class="fps-pos-grid" id="fpsTabPosGrid">
+            <div class="fps-pos-card active" data-pos="top" title="Nằm ngang ở trên cùng Canvas">
+              <span class="fps-pos-icon">⬆️</span>
+              <span class="fps-pos-title">Trên Cùng</span>
+              <span class="fps-pos-sub">Ngang Canvas</span>
+            </div>
+            <div class="fps-pos-card" data-pos="bottom" title="Nằm ngang ở dưới cùng Canvas">
+              <span class="fps-pos-icon">⬇️</span>
+              <span class="fps-pos-title">Dưới Cùng</span>
+              <span class="fps-pos-sub">Đáy Trang</span>
+            </div>
+            <div class="fps-pos-card" data-pos="left" title="Sidebar dọc cạnh trái màn hình">
+              <span class="fps-pos-icon">⬅️</span>
+              <span class="fps-pos-title">Cạnh Trái</span>
+              <span class="fps-pos-sub">Sidebar Dọc</span>
+            </div>
+            <div class="fps-pos-card" data-pos="right" title="Sidebar dọc cạnh phải màn hình">
+              <span class="fps-pos-icon">➡️</span>
+              <span class="fps-pos-title">Cạnh Phải</span>
+              <span class="fps-pos-sub">Sidebar Dọc</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. TRẠNG THÁI & CHIỀU RỘNG (COLLAPSE & WIDTH) -->
+        <div class="fps-section">
+          <div class="fps-section-title">
+            <span>📐 Trạng Thái &amp; Kích Thước</span>
+          </div>
+          
+          <div class="fps-field">
+            <label class="fps-sub-label">Trạng thái thanh Tab:</label>
+            <div class="fps-segmented-btn" id="fpsTabCollapseSegment">
+              <button type="button" class="active" data-state="expanded">📖 Mở Rộng</button>
+              <button type="button" data-state="collapsed">📑 Thu Gọn</button>
+            </div>
+          </div>
+
+          <!-- Chiều rộng khi ở Sidebar Dọc (Trái / Phải) -->
+          <div class="fps-slider-row" id="fpsTabVerticalWidthRow" style="display:none;margin-top:8px;">
+            <div class="fps-slider-label">
+              <span>Độ rộng Sidebar dọc:</span>
+              <span id="fpsTabWidthVal">230px</span>
+            </div>
+            <input type="range" class="fps-range" id="fpsTabVerticalWidth" min="180" max="360" value="230" step="5" />
+          </div>
+        </div>
+
+        <!-- 3. KIỂU DÁNG & KÍCH CỠ TAB (STYLE & SIZE) -->
+        <div class="fps-section">
+          <div class="fps-section-title">
+            <span>🎨 Kiểu Dáng &amp; Kích Thước</span>
+          </div>
+
+          <div class="fps-grid-2">
+            <div class="fps-field">
+              <label class="fps-sub-label">Kiểu hiển thị:</label>
+              <select class="fps-select" id="fpsTabStyleSelect">
+                <option value="pills">💊 Viên Thuốc</option>
+                <option value="cards">🗂️ Thẻ Viền Hộp</option>
+                <option value="underline">➖ Gạch Chân</option>
+              </select>
+            </div>
+            <div class="fps-field">
+              <label class="fps-sub-label">Độ cao / Font:</label>
+              <select class="fps-select" id="fpsTabSizeSelect">
+                <option value="compact">Nhỏ (32px)</option>
+                <option value="normal" selected>Vừa (40px)</option>
+                <option value="comfortable">Lớn (48px)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. MÀU SẮC ĐIỂM NHẤN (ACCENT COLOR) -->
+        <div class="fps-section">
+          <div class="fps-section-title">
+            <span>✨ Màu Chủ Đạo (Accent Color)</span>
+          </div>
+
+          <div class="fps-color-row">
+            <label class="fps-color-picker-label">
+              <input type="color" id="fpsTabAccentColorPicker" value="#0284c7" />
+              <span class="fps-color-swatch" id="fpsTabAccentColorSwatch" style="background:#0284c7;"></span>
+            </label>
+            <input type="text" class="fps-input fps-hex-input" id="fpsTabAccentColorHex" value="#0284C7" />
+          </div>
+
+          <!-- Preset Palette Dots -->
+          <div class="fps-palette-row" id="fpsTabPaletteRow">
+            <span class="fps-palette-dot active" data-color="#0284c7" style="background:#0284c7;" title="Xanh Dương Hiện Đại"></span>
+            <span class="fps-palette-dot" data-color="#2563eb" style="background:#2563eb;" title="Xanh Royal"></span>
+            <span class="fps-palette-dot" data-color="#7c3aed" style="background:#7c3aed;" title="Tím Gradient"></span>
+            <span class="fps-palette-dot" data-color="#059669" style="background:#059669;" title="Xanh Ngọc Emerald"></span>
+            <span class="fps-palette-dot" data-color="#ea580c" style="background:#ea580c;" title="Cam Năng Động"></span>
+            <span class="fps-palette-dot" data-color="#e11d48" style="background:#e11d48;" title="Đỏ Hoa Hồng"></span>
+            <span class="fps-palette-dot" data-color="#0f172a" style="background:#0f172a;" title="Slate Xám Đen"></span>
+          </div>
+        </div>
+
+        <!-- 5. TÙY CHỌN HIỂN THỊ (DISPLAY OPTIONS) -->
+        <div class="fps-section">
+          <div class="fps-section-title">
+            <span>👁️ Tùy Chọn Hiển Thị</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <label class="fps-toggle-row">
+              <span class="fps-toggle-text">Hiển thị số thứ tự trang (#1, #2...)</span>
+              <label class="fps-checkbox-toggle">
+                <input type="checkbox" id="fpsTabShowIndexToggle" />
+                <span class="fps-toggle-switch"></span>
+              </label>
+            </label>
+
+            <label class="fps-toggle-row">
+              <span class="fps-toggle-text">Hiển thị nút đóng xóa tab (✕)</span>
+              <label class="fps-checkbox-toggle">
+                <input type="checkbox" id="fpsTabShowCloseToggle" checked />
+                <span class="fps-toggle-switch"></span>
+              </label>
+            </label>
+          </div>
+        </div>
+
+        <!-- 6. QUẢN LÝ DANH SÁCH TAB (TABS MANAGER) -->
+        <div class="fps-section">
+          <div class="fps-section-title">
+            <span>📑 Danh Sách Các Tab</span>
+            <button type="button" class="fps-mini-btn" id="fpsBtnAddNewTab" title="Thêm một tab dashboard mới">+ Thêm Tab</button>
+          </div>
+
+          <!-- Danh sách các Tab hiện tại -->
+          <div class="fps-tab-items-container" id="fpsTabItemsList">
+            <!-- Dynamic items rendered via JS -->
+          </div>
+        </div>
+
+        <!-- 7. THAO TÁC NHANH (ACTIONS) -->
+        <div class="fps-section">
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="fps-action-btn" id="fpsBtnResetTabConfig">↺ Khôi Phục Mặc Định</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ====================================================================
+       5. CHART CODE STUDIO MODAL (JAVASCRIPT ECHARTS ENGINE)
+       Popup Modal dạng Card nổi chính giữa màn hình (chuẩn 100% Tools Code ECharts Visualizer)
+       ==================================================================== -->
+  <div class="chart-editor-modal" id="chartEditorModal" role="dialog" aria-modal="true">
+    <div class="chart-editor-card" id="chartEditorCard">
+      <!-- 1. Header Popup Chuẩn Tools ECharts Visualizer -->
+      <nav class="viz-navbar" id="ceNavbar">
+        <div class="viz-nav-left">
+          <div class="viz-brand">
+            <div class="viz-brand-logo">📈</div>
+            <div class="viz-title">
+              <span>Trực Quan Hóa (ECharts)</span>
+              <span class="viz-badge">Live</span>
+            </div>
+          </div>
+          <div class="ce-header-config-group">
+            <div class="ce-title-input-wrap">
+              <label for="ceChartTitleInput" class="ce-title-label">Tiêu đề:</label>
+              <input type="text" class="ce-input ce-title-input" id="ceChartTitleInput" placeholder="Tên biểu đồ..." title="Nhập tên tiêu đề biểu đồ" />
+            </div>
+            <label class="ce-hide-header-label" title="Tắt thanh tiêu đề của biểu đồ trên Dashboard để chỉ hiển thị trọn vẹn biểu đồ">
+              <input type="checkbox" id="ceHideHeaderCheckbox" />
+              <span>Ẩn Header</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="viz-nav-right">
+          <button type="button" class="btn-viz" id="btnCeOpenPresets" title="Chọn biểu đồ mẫu trong thư viện doanh nghiệp">
+            📚 Mẫu Biểu Đồ
+          </button>
+          <button type="button" class="btn-viz btn-viz-primary" id="btnCeRun" title="Thực thi code và xem thử biểu đồ tức thời (Ctrl + Enter)">
+            ▶ Chạy Code
+          </button>
+          <button type="button" class="btn-viz btn-viz-save" id="btnCeSave" title="Lưu cấu hình biểu đồ này và đưa vào Dashboard">
+            💾 Lưu Vào Dashboard
+          </button>
+          <button type="button" class="btn-viz btn-viz-close" id="btnCeCancel" title="Đóng cửa sổ chỉnh sửa code (Esc)">
+            ✕ Đóng
+          </button>
+        </div>
+      </nav>
+
+      <!-- 2. Thân Workspace 2 Cột (Split View Chuẩn ECharts Visualizer) -->
+      <main class="viz-workspace">
+        <!-- Cột Trái: Code Editor & Console Monitor -->
+        <aside class="viz-editor-panel" id="ceEditorPanel">
+          <!-- Thanh Tabs Bar -->
+          <div class="viz-tabs-bar">
+            <div class="viz-tabs">
+              <button type="button" class="viz-tab-btn active" id="ceTabBtnCode" data-tab="tabCode">
+                <span>💻</span> Code JavaScript
+              </button>
+              <button type="button" class="viz-tab-btn" id="ceTabBtnData" data-tab="tabData" title="Xem cấu trúc và demo bảng dữ liệu Excel / CSV">
+                <span>📊</span> Data
+              </button>
+            </div>
+            <div class="viz-tab-tools">
+              <button type="button" class="btn-viz btn-viz-primary" id="ceTabRunCode" title="Phím tắt: Ctrl + Enter">
+                ▶ Chạy Code
+              </button>
+              <button type="button" class="btn-viz btn-viz-accent" id="ceTabAiPrompt" title="Prompt AI">
+                🤖 Prompt AI
+              </button>
+              <button type="button" class="btn-viz" id="ceTabFormatCode" title="Căn chỉnh thụt lề (Shift + Alt + F)">
+                ✨ Căn Chỉnh
+              </button>
+              <button type="button" class="btn-viz" id="ceTabCopyCode" title="Sao chép toàn bộ code">
+                📋 Copy
+              </button>
+              <button type="button" class="btn-viz" id="ceTabResetCode" title="Khôi phục code mẫu ban đầu">
+                🔄
+              </button>
+            </div>
+          </div>
+
+          <!-- Mẫu Biểu Đồ Nhanh (Đã bỏ các pill tên sheet để nhường trọn không gian cho code mẫu) -->
+          <div class="ce-quick-bar">
+            <div class="ce-templates-wrap">
+              <span class="ce-tpl-label">⚡ Mẫu Biểu Đồ:</span>
+              <div class="ce-tpl-scroll">
+                <button type="button" class="ce-tpl-btn" data-tpl="bar" title="Biểu đồ cột chuẩn">📊 Cột</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="horizontal_bar" title="Biểu đồ cột nằm ngang">📊 Ngang</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="line" title="Biểu đồ đường xu hướng">📈 Đường</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="area" title="Biểu đồ diện tích vùng">📉 Vùng</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="pie" title="Biểu đồ tròn tỉ lệ">🥧 Tròn</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="stacked" title="Biểu đồ cột chồng (Stacked)">📊 Chồng</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="dual_axes" title="Biểu đồ trục kép (cột + đường)">📈 Trục Kép</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="gauge" title="Biểu đồ đồng hồ đo hiệu suất">⏱️ Gauge</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="radar" title="Biểu đồ mạng nhện">🕸️ Radar</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="funnel" title="Biểu đồ phễu chuyển đổi">🔻 Phễu</button>
+                <button type="button" class="ce-tpl-btn" data-tpl="scatter" title="Biểu đồ phân tán tọa độ">⚪ Phân Tán</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 1: CODE EDITOR -->
+          <div class="viz-tab-content active" id="ceTabCodeContent">
+            <div class="viz-code-wrapper" id="ceEditorContainer">
+              <div class="viz-line-numbers" id="ceLineNumbers">1</div>
+              <div class="viz-code-editor-layer">
+                <pre class="viz-code-highlight" id="ceCodeHighlight" aria-hidden="true"><code id="ceCodeHighlightContent"></code></pre>
+                <textarea class="viz-code-textarea" id="ceCodeTextarea" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+                  placeholder="// Viết code JavaScript cấu hình Apache ECharts tại đây...&#10;// Biến 'data' đã có sẵn chứa toàn bộ dữ liệu file bạn đẩy lên!&#10;// Trả về object 'return option;' hoặc gọi 'myChart.setOption(option);'"></textarea>
+              </div>
+            </div>
+
+            <!-- Terminal Console Logger -->
+            <div class="viz-console-panel" id="ceTerminal">
+              <div class="viz-console-header">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span class="ce-term-status-dot" id="ceTermStatusDot">●</span>
+                  <span>📟 Terminal &amp; Compiler Monitor</span>
+                </div>
+                <button type="button" class="btn-viz btn-viz-xs" id="btnCeClearTerminal" style="padding: 1px 6px; font-size: 10px;">Xóa log</button>
+              </div>
+              <div class="viz-console-body" id="ceTerminalBody">
+                <div class="viz-log-info">⚡ Trình biên dịch ECharts đã sẵn sàng. Bấm "▶ Chạy Code" hoặc nhấn Ctrl+Enter để vẽ biểu đồ!</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: DATA EXPLORER & DEMO BẢNG DỮ LIỆU -->
+          <div class="viz-tab-content" id="ceTabDataContent">
+            <div class="ce-data-studio-panel">
+              <!-- Sub-tabs: TênFile [TênSheet] -->
+              <div class="ce-sheet-tabs-bar" id="ceSheetTabsBar"></div>
+              <!-- Preview Container: Info bar, cú pháp copy, danh sách cột & Demo Bảng -->
+              <div class="ce-sheet-preview-body" id="ceSheetPreviewBody"></div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Thanh Resizer Phân Cách 2 Cột -->
+        <div class="viz-resizer" id="ceResizer" title="Kéo để điều chỉnh độ rộng 2 cột"></div>
+
+        <!-- Cột Phải: Live Preview Canvas & Tra Cứu Cột Excel -->
+        <section class="viz-chart-panel" id="ceChartPanel">
+          <!-- Toolbar Preview -->
+          <div class="viz-chart-toolbar">
+            <div class="viz-chart-toolbar-title">
+              <span class="viz-live-dot"></span>
+              <strong>Bản Vẽ ECharts Tương Tác Trực Tuyến</strong>
+            </div>
+            <div class="viz-chart-toolbar-sub">
+              Xem thử tức thời • Hover, click legend, zoom chuột
+            </div>
+          </div>
+
+          <!-- Khung Canvas ECharts (Nền Trắng Sạch Sẽ) -->
+          <div class="viz-chart-container ce-preview-chart-box">
+            <div id="cePreviewChart"></div>
+          </div>
+
+          <!-- Status Bar -->
+          <footer class="viz-chart-statusbar">
+            <div>Engine: <b>Apache ECharts v5.5</b></div>
+            <div style="display:flex;gap:12px;">
+              <span>Biên dịch: <b id="ceRenderTime" style="color:var(--accent-cyan, #38bdf8);">0 ms</b></span>
+              <span>Dữ liệu: <b id="ceDataCount" style="color:#34d399;">Sẵn sàng</b></span>
+            </div>
+          </footer>
+
+          <!-- Tra Cứu Cột Dữ Liệu Excel -->
+          <div class="ce-data-explorer-wrap">
+            <div class="ce-data-explorer-header">
+              <span>📂 Cấu Trúc Dữ Liệu Excel (Bấm vào cột để sao chép vào code):</span>
+            </div>
+            <div class="ce-preview-data-table" id="cePreviewDataTable"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 1: BỘ SƯU TẬP MẪU BIỂU ĐỒ (PRESETS) CHUẨN ECHARTS VISUALIZER
+       ==================================================================== -->
+  <div class="viz-modal" id="vizPresetModal">
+    <div class="viz-modal-content">
+      <div class="viz-modal-header">
+        <h3><span>📚</span> Thư Viện Mẫu Biểu Đồ ECharts Chuẩn Doanh Nghiệp</h3>
+        <button type="button" class="btn-viz" id="btnClosePresetModal" style="padding: 2px 8px;">✕</button>
+      </div>
+      <div class="viz-modal-body">
+        <div class="preset-grid" id="vizPresetGrid">
+          <!-- Render động từ JS -->
+        </div>
+      </div>
+      <div class="viz-modal-footer">
+        <span style="font-size: 11px; color: var(--text-muted); margin-right: auto;">💡 Bấm vào bất kỳ thẻ nào để áp dụng code mẫu ngay lập tức.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL 2: TRÌNH TẠO PROMPT AI CHUYÊN SÂU CHUẨN ECHARTS VISUALIZER
+       ==================================================================== -->
+  <div class="viz-modal" id="vizAiPromptModal">
+    <div class="viz-modal-content" style="width: 860px; max-width: 95vw;">
+      <div class="viz-modal-header">
+        <h3><span>🤖</span> Trình Tạo Prompt AI Cho Apache ECharts (Chuẩn Chặt Chẽ Cho Non-Code / Low-Code)</h3>
+        <button type="button" class="btn-viz" id="btnCloseAiModal" style="padding: 2px 8px;">✕</button>
+      </div>
+      <div class="viz-modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+
+        <!-- Ô 1: THÔNG TIN DỮ LIỆU ĐẦU VÀO -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 12px; font-weight: 700; color: #9cdcfe;">
+              1. Dữ liệu đầu vào (Tự động nhận diện file đã nạp):
+            </label>
+            <span id="aiPromptFileBadge" style="font-size: 11px; color: #34d399; font-weight: 600;">
+              Sẵn sàng
+            </span>
+          </div>
+          <div id="aiPromptColsBadge" style="font-size: 11px; color: #94a3b8; background: #070b14; border: 1px solid rgba(255,255,255,0.08); padding: 6px 10px; border-radius: 4px; max-height: 55px; overflow-y: auto;">
+            Danh sách cột sẽ tự động xuất hiện ở đây...
+          </div>
+          <textarea id="aiInputDataDesc" style="height: 42px; background: #131b2e; border: 1px solid rgba(255,255,255,0.12); border-radius: 5px; color: #f1f5f9; padding: 6px 10px; font-size: 11.5px; resize: vertical;"
+            placeholder="Ghi chú thêm về dữ liệu nếu cần (tùy chọn): ví dụ cột 'Doanh thu' là số tiền VNĐ, cột 'Trạng thái đơn' có các giá trị Hoàn tất, Hủy..."></textarea>
+        </div>
+
+        <!-- Ô 2: NGHIỆP VỤ XỬ LÝ -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; font-weight: 700; color: #ce9178;">
+            2. Yêu cầu xử lý nghiệp vụ &amp; Gom nhóm dữ liệu (Mô tả ngắn gọn bằng lời):
+          </label>
+          <textarea id="aiBusinessLogic" style="height: 65px; background: #131b2e; border: 1px solid rgba(255,255,255,0.12); border-radius: 5px; color: #f1f5f9; padding: 6px 10px; font-size: 11.5px; resize: vertical;"
+            placeholder="Ví dụ cụ thể:&#10;- Gom nhóm theo cột 'Khu vực' và tính tổng 'Doanh thu', tổng 'Lợi nhuận'&#10;- Lọc bỏ các đơn có 'Trạng thái đơn' là 'Đã hủy'&#10;- Tính tỷ suất lợi nhuận Margin % = (Lợi nhuận / Doanh thu) * 100"></textarea>
+        </div>
+
+        <!-- Ô 3: KIỂU BIỂU ĐỒ & KẾT QUẢ ĐẦU RA MONG MUỐN -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; font-weight: 700; color: #dcdcaa;">
+            3. Kiểu biểu đồ &amp; Kết quả đầu ra mong muốn:
+          </label>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;">
+            <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ cột đôi dải màu Gradient so sánh Doanh thu và Lợi nhuận">📊 Cột Gradient</button>
+            <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ đường xu hướng Smooth Area có vùng phủ gradient mềm mại">📈 Đường Xu Hướng</button>
+            <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ bánh Donut tỷ trọng % có góc bo mềm mại">🍩 Bánh Donut %</button>
+            <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ hỗn hợp Cột (Doanh thu) và Đường (Tỷ suất lợi nhuận %) 2 trục Y">📶 Cột &amp; Đường Đôi</button>
+            <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ tương tác đa chiều có nút bấm chuyển đổi Khu Vực / Danh Mục / Kênh Bán">🎛️ Dashboard Đa Nút</button>
+          </div>
+          <textarea id="aiExpectedOutput" style="height: 45px; background: #131b2e; border: 1px solid rgba(255,255,255,0.12); border-radius: 5px; color: #f1f5f9; padding: 6px 10px; font-size: 11.5px; resize: vertical;"
+            placeholder="Ví dụ: Xuất biểu đồ có tiêu đề rõ ràng, đơn vị tiền VNĐ, tooltip chi tiết, toolbox tải ảnh, nền trắng, màu sắc xanh dương và xanh lá hiện đại..."></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end;">
+          <button type="button" class="btn-viz btn-viz-primary" id="btnGenerateAiPrompt" style="padding: 6px 16px;">
+            ⚡ Sinh System Prompt Chặt Chẽ Cho AI
+          </button>
+        </div>
+
+        <!-- Ô 4: PROMPT HOÀN CHỈNH -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; font-weight: 700; color: #4ec9b0;">
+            4. System Prompt hoàn chỉnh (Copy gửi ChatGPT, Gemini, Claude, DeepSeek):
+          </label>
+          <textarea id="aiPromptOutput" readonly spellcheck="false"
+            style="height: 140px; background: #070b14; border: 1px solid rgba(255,255,255,0.12); border-radius: 5px; color: #9cdcfe; font-family: Consolas, monospace; font-size: 11px; padding: 10px; resize: vertical;"></textarea>
+        </div>
+
+        <!-- Ô 5: DÁN MÃ CODE TỪ AI ĐỂ ÁP DỤNG NGAY -->
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <label style="font-size: 12px; font-weight: 700; color: #f59e0b;">
+            5. Dán mã code do AI sinh ra vào đây để áp dụng thẳng vào Editor:
+          </label>
+          <textarea id="aiCodePasteArea" spellcheck="false"
+            style="height: 85px; background: #070b14; border: 1px solid rgba(245,158,11,0.3); border-radius: 5px; color: #fef08a; font-family: Consolas, monospace; font-size: 11px; padding: 10px; resize: vertical;"
+            placeholder="// Dán toàn bộ mã code JavaScript mà AI sinh ra vào đây và bấm 'Áp Dụng Mã AI Vào Editor'..."></textarea>
+        </div>
+      </div>
+      <div class="viz-modal-footer">
+        <span style="font-size: 11px; color: var(--text-muted); margin-right: auto;">💡 Prompt đã được tối ưu ràng buộc code 100% chạy không lỗi trên runtime của ECharts Studio.</span>
+        <button type="button" class="btn-viz" id="btnCopyAiPrompt">
+          📋 Copy Prompt
+        </button>
+        <button type="button" class="btn-viz btn-viz-primary" id="btnApplyAiCode">
+          ⚡ Áp Dụng Mã AI Vào Editor
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       7. WIDGET CONFIGURATION MODAL (FILTER, KPI, HEADING, FRAME)
+       ==================================================================== -->
+  <div class="db-simple-modal" id="widgetConfigModal">
+    <div class="db-simple-box" style="max-width:540px;">
+      <div class="ce-header">
+        <span style="font-weight:700;font-size:15px;color:#fff;" id="widgetModalTitle">Cấu Hình Widget</span>
+        <button class="db-btn-tool" id="btnCloseWidgetModal">✕</button>
+      </div>
+      <div style="padding:20px;display:flex;flex-direction:column;gap:14px;" id="widgetModalBody">
+        <!-- Rendered dynamically for Filter, KPI, Heading, Frame -->
+      </div>
+      <div class="ce-header" style="justify-content:flex-end;border-top:1px solid var(--db-card-border);background:transparent;">
+        <button class="db-btn-tool" id="btnCancelWidgetModal">Hủy</button>
+        <button class="db-btn-tool save-btn" id="btnSaveWidgetModal">💾 Lưu Widget</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       8. RECENT / SAVED DASHBOARDS MANAGER MODAL
+       ==================================================================== -->
+  <div class="db-simple-modal" id="savedDashboardsModal">
+    <div class="db-simple-box" style="max-width:680px;">
+      <div class="ce-header">
+        <span style="font-weight:700;font-size:15px;color:#fff;">📚 Quản Lý Các Bản Dashboard Đã Lưu (Không Cần Database)</span>
+        <button class="db-btn-tool" id="btnCloseSavedDashboardsModal">✕</button>
+      </div>
+      <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+        <div style="font-size:12px;color:var(--db-text-sub);line-height:1.5;">
+          Danh sách các cấu hình Dashboard JSON đã được lưu trên máy của bạn. Bạn có thể mở lại để chỉnh sửa, tải file JSON về máy, hoặc xóa bản lưu cũ.
+        </div>
+        <div class="saved-dashboards-list" id="savedDashboardsList" style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+      <div class="ce-header" style="justify-content:space-between;border-top:1px solid var(--db-card-border);background:transparent;">
+        <div style="display:flex;gap:8px;">
+          <button class="db-btn-tool" id="btnModalImportFolder">📁 Mở Thư Mục (JSON + Excel)</button>
+          <button class="db-btn-tool" id="btnModalImportJsonFile">📂 Nạp Riêng File JSON</button>
+        </div>
+        <button class="db-btn-tool save-btn" id="btnModalSaveCurrentSnapshot">💾 Lưu Bản Hiện Tại Vào Danh Sách</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       9. EXCEL DATA FILES MANAGER MODAL (QUẢN LÝ NGUỒN DỮ LIỆU EXCEL / CSV)
+       ==================================================================== -->
+  <div class="db-simple-modal" id="excelFilesModal">
+    <div class="db-simple-box db-excel-modal-box">
+      <!-- Modal Header -->
+      <div class="ce-header db-excel-modal-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">🗂️</span>
+          <div>
+            <strong style="font-weight:700;font-size:16px;color:#0f172a;">Quản Lý Nguồn Dữ Liệu (Excel &amp; CSV)</strong>
+            <div style="font-size:12px;color:var(--db-text-sub);">Thêm, sửa, xóa và xem trước các tập tin dữ liệu dùng làm nguồn cho Dashboard &amp; Biểu đồ</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="db-excel-badge" id="excelFilesTotalBadge">0 tệp dữ liệu</span>
+          <button class="db-btn-tool" id="btnCloseExcelModal" title="Đóng cửa sổ">✕</button>
+        </div>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="db-excel-modal-body">
+        <!-- Vùng Nạp File Mới (Quyền THÊM & Drag Drop) -->
+        <div class="db-excel-upload-zone" id="excelModalDropZone">
+          <div style="font-size:32px;line-height:1;">📤</div>
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <div style="font-size:14px;font-weight:700;color:#0f172a;">Kéo thả file Excel hoặc CSV vào đây để nạp thêm nguồn dữ liệu</div>
+            <div style="font-size:12px;color:var(--db-text-sub);">Hỗ trợ định dạng .xlsx, .xls, .csv • Tự động nhận diện tất cả các Sheet</div>
+          </div>
+          <label class="db-btn-tool primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:700;padding:8px 16px;">
+            ➕ Nạp Thêm File Từ Máy Tính
+            <input type="file" id="excelFileInput" multiple accept=".xlsx,.xls,.csv" style="display:none;" />
+          </label>
+        </div>
+
+        <!-- Danh Sách Các File Đã Đẩy Lên (Quyền HIỂN THỊ, SỬA, XÓA) -->
+        <div class="db-excel-section-header">
+          <span style="font-size:13px;font-weight:700;color:#1e293b;">📋 Danh Sách File Đã Nạp Trong Dashboard</span>
+          <span style="font-size:11px;color:var(--db-text-sub);">Bấm vào Sheet để xem trước bảng dữ liệu hoặc bấm ✏️ Sửa / 🗑️ Xóa</span>
+        </div>
+        <div id="loadedExcelFilesList" class="db-excel-files-list"></div>
+
+        <!-- Vùng Xem Trước Bảng Dữ Liệu (Live Data Preview) -->
+        <div class="db-excel-preview-section" id="excelPreviewSection">
+          <div class="db-excel-preview-header">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:15px;">👁️</span>
+              <strong style="font-size:13px;color:#0f172a;" id="excelPreviewTitle">Xem trước dữ liệu</strong>
+            </div>
+            <span style="font-size:11px;color:var(--db-text-sub);" id="excelPreviewMeta">10 dòng đầu tiên</span>
+          </div>
+          <div class="db-excel-table-wrapper" id="excelPreviewTableWrapper">
+            <div style="color:var(--db-text-sub);text-align:center;padding:24px;font-size:12px;">Chọn một sheet ở danh sách trên để xem trước bảng dữ liệu.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="ce-header db-excel-modal-footer">
+        <div style="font-size:12px;color:var(--db-text-sub);" id="excelModalFooterStats">
+          Dữ liệu được nạp vào bộ nhớ trình duyệt, có thể dùng ngay cho mọi Biểu đồ ECharts.
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="db-btn-tool primary" id="btnExcelModalAddChart" style="display:inline-flex;align-items:center;gap:6px;">
+            📊 + Tạo Biểu Đồ Từ Nguồn Này
+          </button>
+          <button class="db-btn-tool" id="btnCloseExcelModalFooter">✕ Đóng</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       10. CONFIRMATION ON SAVE / EXPORT MODAL (BỘ TỆP ĐỘC LẬP & TÙY CHỌN XUẤT)
+       ==================================================================== -->
+  <div class="db-save-confirm-modal" id="saveConfirmModal">
+    <div class="db-confirm-card" style="max-width:620px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+        <div style="display:flex;align-items:flex-start;gap:12px;">
+          <div style="font-size:28px;background:rgba(16,185,129,0.15);padding:8px;border-radius:10px;line-height:1;">💾</div>
+          <div>
+            <h3 style="margin:0 0 4px 0;font-size:18px;font-weight:700;color:#fff;">Lưu &amp; Xuất Toàn Bộ Dashboard</h3>
+            <p style="margin:0;font-size:12.5px;color:var(--db-text-sub);line-height:1.5;">
+              Dữ liệu và cấu hình lưu trữ độc lập theo chuẩn JSON, cho phép tải lại để tiếp tục chỉnh sửa bất cứ lúc nào:
+            </p>
+          </div>
+        </div>
+        <button class="db-btn-tool" id="btnCloseSaveConfirmModal" style="padding:4px 8px;">✕</button>
+      </div>
+
+      <!-- Files Package Breakdown -->
+      <div class="db-files-package-box">
+        <div class="db-file-item">
+          <span style="font-size:16px;">⚙️</span>
+          <div>
+            <div class="db-file-item-name" id="confirmJsonName">dashboard_config.json</div>
+            <div class="db-file-item-desc">File JSON lưu toàn bộ cấu hình, tọa độ, code biểu đồ VÀ nhúng dữ liệu Excel để mở lại tiếp tục chỉnh sửa.</div>
+          </div>
+        </div>
+        <div class="db-file-item">
+          <span style="font-size:16px;">🌐</span>
+          <div>
+            <div class="db-file-item-name" id="confirmHtmlName">index.html</div>
+            <div class="db-file-item-desc">File HTML báo cáo độc lập: Tái hiện 100% giao diện, tương tác và mở xem trực tiếp trên mọi trình duyệt.</div>
+          </div>
+        </div>
+        <div class="db-file-item">
+          <span style="font-size:16px;">📊</span>
+          <div>
+            <div class="db-file-item-name" id="confirmExcelName">Du_Lieu_Nguon.xlsx</div>
+            <div class="db-file-item-desc">Bản sao dữ liệu nguồn Excel / CSV được lưu trữ kèm theo.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+        <button class="db-confirm-main-btn" id="btnConfirmDownloadZip" style="background:linear-gradient(135deg, #059669 0%, #10b981 100%);padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13.5px;" title="Tải 1 file ZIP duy nhất chứa trọn bộ HTML, JSON và Excel (Trình duyệt không chặn)">
+          📦 Tải Gói ZIP Trọn Bộ (Khuyên Dùng — HTML + JSON + Excel)
+        </button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <button class="db-confirm-sub-btn" id="btnExportJsonDirect" title="Tải riêng file JSON cấu hình kèm dữ liệu nhúng để nạp lại chỉnh sửa sau">
+            ⚙️ Xuất File JSON (.json)
+          </button>
+          <button class="db-confirm-sub-btn" id="btnExportHtmlDirect" title="Tải file HTML xem báo cáo trực tiếp">
+            🌐 Xuất File HTML (.html)
+          </button>
+        </div>
+        <button class="db-confirm-sub-btn" id="btnConfirmSaveDirectory" title="Chọn thư mục trên máy tính để lưu bộ tệp">
+          📁 Lưu Trực Tiếp Vào Thư Mục Máy Tính
+        </button>
+        <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+          <button class="db-confirm-sub-btn" style="padding:6px 14px;" id="btnCancelSaveModal">
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       10.5 IMPORT DASHBOARD MODAL (NẠP LẠI DASHBOARD ĐỂ TIẾP TỤC CHỈNH SỬA)
+       ==================================================================== -->
+  <div class="db-simple-modal" id="dashboardImportModal">
+    <div class="db-simple-box" style="max-width:560px;">
+      <div class="ce-header">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:20px;">📥</span>
+          <strong style="color:#0f172a;font-size:15px;">Nạp Dashboard Để Tiếp Tục Chỉnh Sửa</strong>
+        </div>
+        <button class="db-btn-tool" id="btnCloseImportModal">✕</button>
+      </div>
+      <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+        <div style="font-size:12.5px;color:var(--db-text-sub);line-height:1.5;">
+          Chọn tệp hoặc thư mục Dashboard đã lưu để tái hiện lại 100% giao diện làm việc, các biểu đồ, bố cục và dữ liệu cũ:
+        </div>
+
+        <!-- Option 1: File JSON / HTML / ZIP -->
+        <button class="db-confirm-main-btn" id="btnImportFilePicker" style="background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%);display:flex;align-items:center;gap:12px;text-align:left;padding:14px 16px;cursor:pointer;">
+          <span style="font-size:26px;">📄</span>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:14px;color:#fff;">Chọn Tệp (.json, .html, .zip)</div>
+            <div style="font-size:11.5px;color:#e0f2fe;font-weight:normal;margin-top:2px;line-height:1.4;">
+              • File JSON cấu hình: Nạp lại giao diện và dữ liệu nhúng<br>
+              • File HTML cũ (index.html): Tự động trích xuất cấu hình để sửa tiếp<br>
+              • File ZIP trọn bộ: Tự động giải nén cấu hình và các file Excel
+            </div>
+          </div>
+        </button>
+
+        <!-- Option 2: Folder -->
+        <button class="db-confirm-sub-btn" id="btnImportFolderPicker" style="display:flex;align-items:center;gap:12px;text-align:left;padding:14px 16px;cursor:pointer;">
+          <span style="font-size:26px;">📁</span>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:14px;color:#0f172a;">Chọn Thư Mục Dashboard Trên Máy Tính</div>
+            <div style="font-size:11.5px;color:var(--db-text-sub);font-weight:normal;margin-top:2px;">
+              Mở thư mục chứa bộ tệp (HTML, JSON và các file Excel dữ liệu)
+            </div>
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       11. DASHBOARD TEMPLATES GALLERY MODAL (XEM MẪU DASHBOARD)
+       ==================================================================== -->
+  <div class="db-simple-modal" id="templatesModal">
+    <div class="db-simple-box" style="max-width:920px;">
+      <div class="ce-header">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:20px;">📚</span>
+          <div>
+            <strong style="color:#fff;font-size:16px;">Thư Viện Mẫu Dashboard Chuẩn Đẹp</strong>
+            <div style="font-size:12px;color:var(--db-text-sub);">Xem trước chi tiết bố cục hoặc chọn mẫu có sẵn để nạp nhanh Dashboard chuyên nghiệp</div>
+          </div>
+        </div>
+        <button class="db-btn-tool" id="btnCloseTemplatesModal">✕</button>
+      </div>
+
+      <div style="padding:20px;max-height:calc(85vh - 70px);overflow-y:auto;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:16px;" id="templatesGrid">
+          <!-- Template 1: Sales -->
+          <div class="db-template-card">
+            <div class="db-tpl-thumb" style="background:linear-gradient(135deg, rgba(2,132,199,0.2) 0%, rgba(3,105,161,0.4) 100%);">
+              <span style="font-size:36px;">📊</span>
+              <span class="db-tpl-badge">4 Widgets</span>
+            </div>
+            <div class="db-tpl-info">
+              <div class="db-tpl-title">Báo Cáo Bán Hàng &amp; Kinh Doanh</div>
+              <div class="db-tpl-desc">Bao gồm KPI Doanh Thu, Bộ Lọc Khu Vực, Biểu đồ Cột doanh số theo tháng &amp; Tròn tỷ trọng ngành hàng.</div>
+              <div class="db-tpl-actions-row">
+                <button class="db-btn-tool db-tpl-preview-btn" data-preview-key="sales">👁️ Xem Trước</button>
+                <button class="db-btn-tool primary db-tpl-apply-btn" data-template-key="sales">⚡ Áp Dụng</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Template 2: Finance -->
+          <div class="db-template-card">
+            <div class="db-tpl-thumb" style="background:linear-gradient(135deg, rgba(16,185,129,0.2) 0%, rgba(5,150,105,0.4) 100%);">
+              <span style="font-size:36px;">📈</span>
+              <span class="db-tpl-badge">5 Widgets</span>
+            </div>
+            <div class="db-tpl-info">
+              <div class="db-tpl-title">Phân Tích Tài Chính &amp; Lợi Nhuận</div>
+              <div class="db-tpl-desc">Bao gồm KPI Lợi Nhuận, Chi Phí, Biểu đồ Trục Kép (Doanh Thu vs Chi Phí) và Gauge Chỉ Tiêu.</div>
+              <div class="db-tpl-actions-row">
+                <button class="db-btn-tool db-tpl-preview-btn" data-preview-key="finance">👁️ Xem Trước</button>
+                <button class="db-btn-tool primary db-tpl-apply-btn" data-template-key="finance">⚡ Áp Dụng</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Template 3: Operations -->
+          <div class="db-template-card">
+            <div class="db-tpl-thumb" style="background:linear-gradient(135deg, rgba(168,85,247,0.2) 0%, rgba(126,34,206,0.4) 100%);">
+              <span style="font-size:36px;">🎯</span>
+              <span class="db-tpl-badge">5 Widgets</span>
+            </div>
+            <div class="db-tpl-info">
+              <div class="db-tpl-title">Hiệu Suất Vận Hành &amp; Đơn Hàng</div>
+              <div class="db-tpl-desc">Bao gồm KPI Số Đơn Hàng, Biểu Đồ Radar Đánh Giá Khu Vực &amp; Phễu Chuyển Đổi Bán Hàng.</div>
+              <div class="db-tpl-actions-row">
+                <button class="db-btn-tool db-tpl-preview-btn" data-preview-key="operations">👁️ Xem Trước</button>
+                <button class="db-btn-tool primary db-tpl-apply-btn" data-template-key="operations">⚡ Áp Dụng</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Template 4: Blank -->
+          <div class="db-template-card">
+            <div class="db-tpl-thumb" style="background:linear-gradient(135deg, rgba(100,116,139,0.2) 0%, rgba(71,85,105,0.4) 100%);">
+              <span style="font-size:36px;">📄</span>
+              <span class="db-tpl-badge">Trống</span>
+            </div>
+            <div class="db-tpl-info">
+              <div class="db-tpl-title">Dashboard Trống (Blank Canvas)</div>
+              <div class="db-tpl-desc">Khởi tạo một trang Dashboard hoàn toàn trống để bạn tự thiết kế các biểu đồ và widget.</div>
+              <div class="db-tpl-actions-row">
+                <button class="db-btn-tool db-tpl-preview-btn" data-preview-key="blank">👁️ Xem Trước</button>
+                <button class="db-btn-tool db-tpl-apply-btn" data-template-key="blank">✨ Tạo Mới</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail Preview Drawer for Selected Template -->
+        <div class="db-tpl-preview-drawer" id="templatesPreviewDrawer">
+          <div class="db-tpl-preview-header">
+            <div>
+              <strong style="font-size:14px;color:#0f172a;" id="tplPreviewTitle">Chi Tiết Mẫu Dashboard</strong>
+              <div style="font-size:12px;color:var(--db-text-sub);" id="tplPreviewDesc">Danh sách các thành phần &amp; bố cục cấu hình trong mẫu</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="db-btn-tool primary" id="btnTplPreviewApply">⚡ Áp Dụng Mẫu Này</button>
+              <button class="db-btn-tool" id="btnTplPreviewClose">✕ Đóng</button>
+            </div>
+          </div>
+          <div id="tplPreviewContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       12.1. TAB BAR SETTINGS MODAL (CẤU HÌNH CHI TIẾT THANH TAB)
+       Điều chỉnh 4 hướng (Trên, Dưới, Trái, Phải), Thu gọn/Mở rộng, Kiểu dáng, Kích cỡ
+       ==================================================================== -->
+  <div class="db-modal-overlay" id="tabBarConfigModal" style="display:none;">
+    <div class="db-modal-card tab-config-modal-card">
+      <div class="db-modal-header">
+        <div class="db-modal-header-left">
+          <span style="font-size:22px;">🗂️</span>
+          <div>
+            <h3 class="db-modal-title">Cấu Hình Thanh Tab Dashboard</h3>
+            <div style="font-size:12px;color:var(--db-text-sub);">Tùy biến vị trí 4 hướng màn hình, chế độ thu gọn/mở rộng và kiểu hiển thị</div>
+          </div>
+        </div>
+        <button class="db-modal-close-btn" id="btnCloseTabConfigModal" title="Đóng cửa sổ">✕</button>
+      </div>
+
+      <div class="db-modal-body tab-config-modal-body">
+        <!-- 1. VỊ TRÍ THANH TAB (4 HƯỚNG) -->
+        <div class="tc-section">
+          <label class="tc-section-label">
+            <span class="tc-label-badge">1</span>
+            <strong>Vị Trí Hiển Thị (4 Hướng Màn Hình)</strong>
+          </label>
+          <div class="tc-grid-4">
+            <label class="tc-card-option" data-pos="top">
+              <input type="radio" name="tabPositionRadio" value="top" checked />
+              <div class="tc-card-content">
+                <span class="tc-icon">⬆️</span>
+                <span class="tc-title">Trên Cùng</span>
+                <span class="tc-desc">Mặc định, nằm ngang trên Canvas</span>
+              </div>
+            </label>
+
+            <label class="tc-card-option" data-pos="bottom">
+              <input type="radio" name="tabPositionRadio" value="bottom" />
+              <div class="tc-card-content">
+                <span class="tc-icon">⬇️</span>
+                <span class="tc-title">Dưới Cùng</span>
+                <span class="tc-desc">Thanh đáy trang ngang màn hình</span>
+              </div>
+            </label>
+
+            <label class="tc-card-option" data-pos="left">
+              <input type="radio" name="tabPositionRadio" value="left" />
+              <div class="tc-card-content">
+                <span class="tc-icon">⬅️</span>
+                <span class="tc-title">Cạnh Trái</span>
+                <span class="tc-desc">Thanh Sidebar dọc bên trái</span>
+              </div>
+            </label>
+
+            <label class="tc-card-option" data-pos="right">
+              <input type="radio" name="tabPositionRadio" value="right" />
+              <div class="tc-card-content">
+                <span class="tc-icon">➡️</span>
+                <span class="tc-title">Cạnh Phải</span>
+                <span class="tc-desc">Thanh Sidebar dọc bên phải</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 2. TRẠNG THÁI & CHẾ ĐỘ THU GỌN / MỞ RỘNG -->
+        <div class="tc-section">
+          <label class="tc-section-label">
+            <span class="tc-label-badge">2</span>
+            <strong>Trạng Thái Thu Gọn / Mở Rộng</strong>
+          </label>
+          <div class="tc-grid-2">
+            <label class="tc-card-option" data-state="expanded">
+              <input type="radio" name="tabCollapsedRadio" value="expanded" checked />
+              <div class="tc-card-content">
+                <span class="tc-icon">📖</span>
+                <span class="tc-title">Mở Rộng Đầy Đủ</span>
+                <span class="tc-desc">Hiển thị đầy đủ tên tab, nhãn nút và thao tác</span>
+              </div>
+            </label>
+
+            <label class="tc-card-option" data-state="collapsed">
+              <input type="radio" name="tabCollapsedRadio" value="collapsed" />
+              <div class="tc-card-content">
+                <span class="tc-icon">📑</span>
+                <span class="tc-title">Thu Gọn Tinh Giản</span>
+                <span class="tc-desc">Tiết kiệm diện tích tối đa cho Canvas làm việc</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 3. KIỂU DÁNG & GIAO DIỆN TAB -->
+        <div class="tc-section">
+          <label class="tc-section-label">
+            <span class="tc-label-badge">3</span>
+            <strong>Kiểu Dáng Tab &amp; Kích Thước</strong>
+          </label>
+          <div class="tc-row-split">
+            <div class="tc-field-group">
+              <label class="tc-sub-label">Kiểu hiển thị tab:</label>
+              <select class="ce-input" id="tcTabStyleSelect">
+                <option value="pills">💊 Viên thuốc bo tròn (Pills)</option>
+                <option value="cards">🗂️ Thẻ viền hộp (Cards)</option>
+                <option value="underline">➖ Tối giản gạch chân (Underline)</option>
+              </select>
+            </div>
+            <div class="tc-field-group">
+              <label class="tc-sub-label">Kích thước chữ / độ cao:</label>
+              <select class="ce-input" id="tcTabSizeSelect">
+                <option value="compact">Nhỏ gọn (Compact - 12px)</option>
+                <option value="normal" selected>Tiêu chuẩn (Normal - 13px)</option>
+                <option value="comfortable">Rộng rãi (Comfortable - 14px)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. MÀU SẮC CHỈ BÁO & TÙY CHỌN BỔ SUNG -->
+        <div class="tc-section">
+          <label class="tc-section-label">
+            <span class="tc-label-badge">4</span>
+            <strong>Màu Sắc Nổi Bật &amp; Tùy Chọn Khác</strong>
+          </label>
+          <div class="tc-row-split">
+            <div class="tc-field-group">
+              <label class="tc-sub-label">Màu Tab Đang Chọn (Active Accent):</label>
+              <div class="tc-color-palette" id="tcColorPalette">
+                <button type="button" class="tc-color-dot active" data-color="#0284c7" style="background:#0284c7;" title="Xanh Dương Đậm (Mặc định)"></button>
+                <button type="button" class="tc-color-dot" data-color="#2563eb" style="background:#2563eb;" title="Xanh Royal"></button>
+                <button type="button" class="tc-color-dot" data-color="#7c3aed" style="background:#7c3aed;" title="Tím Gradient"></button>
+                <button type="button" class="tc-color-dot" data-color="#059669" style="background:#059669;" title="Xanh Ngọc Emerald"></button>
+                <button type="button" class="tc-color-dot" data-color="#ea580c" style="background:#ea580c;" title="Cam Năng Động"></button>
+                <button type="button" class="tc-color-dot" data-color="#e11d48" style="background:#e11d48;" title="Đỏ Hoa Hồng"></button>
+                <button type="button" class="tc-color-dot" data-color="#334155" style="background:#334155;" title="Slate Xám Đen"></button>
+              </div>
+            </div>
+
+            <div class="tc-field-group">
+              <label class="tc-sub-label">Tùy chọn hiển thị:</label>
+              <div class="tc-checkbox-list">
+                <label class="tc-checkbox-item">
+                  <input type="checkbox" id="tcShowIndexCheckbox" />
+                  <span>Hiển thị số thứ tự trang (#1, #2, #3...)</span>
+                </label>
+                <label class="tc-checkbox-item">
+                  <input type="checkbox" id="tcShowCloseBtnCheckbox" checked />
+                  <span>Hiển thị nút đóng xóa tab (✕) khi hover</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="db-modal-footer">
+        <button class="db-btn-tool" id="btnResetTabConfig">↺ Khôi Phục Mặc Định</button>
+        <div style="display:flex;gap:8px;">
+          <button class="db-btn-tool" id="btnCancelTabConfig">Hủy</button>
+          <button class="db-btn-tool primary" id="btnApplyTabConfig">✓ Áp Dụng Thay Đổi</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       12. UNIVERSAL SYSTEM DIALOG POPUP (ALERT / CONFIRM / PROMPT)
+       Thay thế toàn bộ alert / confirm / prompt mặc định của trình duyệt
+       ==================================================================== -->
+  <div class="app-dialog-modal" id="appDialogModal" style="display:none;">
+    <div class="app-dialog-card" id="appDialogCard">
+      <div class="app-dialog-header">
+        <div class="app-dialog-header-left">
+          <span class="app-dialog-icon" id="appDialogIcon">❓</span>
+          <h3 class="app-dialog-title" id="appDialogTitle">Xác Nhận</h3>
+        </div>
+        <button class="app-dialog-close-btn" id="appDialogCloseBtn" title="Đóng cửa sổ">✕</button>
+      </div>
+      <div class="app-dialog-body">
+        <div class="app-dialog-message" id="appDialogMessage"></div>
+        <div class="app-dialog-prompt-wrap" id="appDialogPromptWrap" style="display:none;margin-top:12px;">
+          <input type="text" class="ce-input app-dialog-input" id="appDialogInput" style="width:100%;font-size:14px;padding:8px 12px;box-sizing:border-box;" />
+        </div>
+      </div>
+      <div class="app-dialog-footer" id="appDialogFooter">
+        <button class="db-btn-tool app-dialog-cancel-btn" id="appDialogCancelBtn">Hủy Bỏ</button>
+        <button class="db-btn-tool primary app-dialog-confirm-btn" id="appDialogConfirmBtn">Xác Nhận</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Engine -->
+  <script src="js/dashboard-builder.js"></script>
+</body>
+
+</html>

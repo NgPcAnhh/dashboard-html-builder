@@ -1,0 +1,721 @@
+/* ==========================================================================
+   ECHARTS VISUALIZER - STYLESHEET
+   Môi trường biên dịch JavaScript & Trực quan hóa dữ liệu ECharts
+   ========================================================================== */
+
+/* Layout Chính */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-primary);
+  background-image: var(--global-bg-gradient);
+  background-attachment: fixed;
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Navbar Top */
+.viz-navbar {
+  height: 54px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+  z-index: 50;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.viz-nav-left, .viz-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.viz-brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4);
+}
+
+.viz-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.viz-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent-cyan);
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+/* Toolbar Buttons */
+.btn-viz {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.btn-viz:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent-cyan);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-viz-primary {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border-color: #3b82f6;
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+}
+
+.btn-viz-primary:hover {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: #60a5fa;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.5);
+}
+
+.btn-viz-accent {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.btn-viz-accent:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: #34d399;
+  color: #fff;
+}
+
+/* Main Split View */
+.viz-workspace {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Cột Trái: Editor & Data */
+.viz-editor-panel {
+  width: 48%;
+  min-width: 340px;
+  max-width: 80%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  position: relative;
+  z-index: 10;
+}
+
+/* Thanh Tabs bên trái */
+.viz-tabs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.viz-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.viz-tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  border-bottom: 2px solid transparent;
+}
+
+.viz-tab-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.viz-tab-btn.active {
+  color: var(--accent-cyan);
+  background: var(--bg-secondary);
+  border-bottom-color: var(--accent-cyan);
+}
+
+.viz-tab-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Tab Contents */
+.viz-tab-content {
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viz-tab-content.active {
+  display: flex;
+}
+
+/* Code Editor & Syntax Highlighting Container */
+.viz-code-wrapper {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+  background: #090e1a;
+  font-family: "Fira Code", Consolas, Monaco, "Courier New", monospace;
+}
+
+.viz-line-numbers {
+  width: 44px;
+  padding: 12px 6px 12px 0;
+  background: #060a14;
+  color: #4b5563;
+  text-align: right;
+  font-size: 12.5px;
+  line-height: 1.6;
+  user-select: none;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.viz-code-editor-layer {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+}
+
+.viz-code-highlight,
+.viz-code-textarea {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  padding: 12px 14px;
+  margin: 0;
+  border: none;
+  font-family: "Fira Code", Consolas, Monaco, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+  word-wrap: normal;
+  letter-spacing: 0px;
+  box-sizing: border-box;
+}
+
+.viz-code-highlight {
+  background: transparent;
+  color: #cbd5e1;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.viz-code-highlight code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: inherit;
+}
+
+.viz-code-textarea {
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: #38bdf8;
+  z-index: 2;
+  resize: none;
+  outline: none;
+  overflow: auto;
+}
+
+.viz-code-textarea::selection {
+  background: rgba(56, 189, 248, 0.28);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Syntax Highlighting Tokens (Bảng màu Code VS Code Dark+ / JetBrains hiện đại) */
+.token-comment {
+  color: #6a9955;
+  font-style: italic;
+}
+
+.token-string {
+  color: #98c379;
+}
+
+.token-keyword {
+  color: #c678dd;
+  font-weight: 600;
+}
+
+.token-boolean {
+  color: #e5c07b;
+  font-weight: 600;
+}
+
+.token-builtin {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.token-number {
+  color: #d19a66;
+}
+
+.token-func {
+  color: #61afef;
+  font-weight: 500;
+}
+
+.token-prop {
+  color: #e06c75;
+}
+
+.token-operator {
+  color: #56b6c2;
+}
+
+/* Bracket Pair Colorization (Vàng, Tím, Xanh) */
+.token-bracket-1 {
+  color: #ffd700;
+  font-weight: 600;
+}
+
+.token-bracket-2 {
+  color: #da70d6;
+  font-weight: 600;
+}
+
+.token-bracket-3 {
+  color: #179fff;
+  font-weight: 600;
+}
+
+/* ========================================================
+   ĐƯỜNG DÓNG THỤT LỀ & MÀU PHÂN BIỆT CẤP THỤT DÒNG
+   (INDENTATION GUIDES & INDENT RAINBOW)
+   ======================================================== */
+.indent-guide {
+  display: inline;
+  position: relative;
+  pointer-events: none;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  border-radius: 1px;
+}
+
+/* Level 1: Vàng ấm */
+.indent-guide.indent-lvl-1 {
+  box-shadow: inset 1.5px 0 0 0 rgba(229, 192, 123, 0.5);
+  background-color: rgba(229, 192, 123, 0.08);
+}
+
+/* Level 2: Tím hoa cà */
+.indent-guide.indent-lvl-2 {
+  box-shadow: inset 1.5px 0 0 0 rgba(198, 120, 221, 0.5);
+  background-color: rgba(198, 120, 221, 0.08);
+}
+
+/* Level 3: Xanh da trời */
+.indent-guide.indent-lvl-3 {
+  box-shadow: inset 1.5px 0 0 0 rgba(97, 175, 239, 0.5);
+  background-color: rgba(97, 175, 239, 0.08);
+}
+
+/* Level 4: Xanh lá cây */
+.indent-guide.indent-lvl-4 {
+  box-shadow: inset 1.5px 0 0 0 rgba(152, 195, 121, 0.5);
+  background-color: rgba(152, 195, 121, 0.08);
+}
+
+/* Level 5: Đỏ cam san hô */
+.indent-guide.indent-lvl-5 {
+  box-shadow: inset 1.5px 0 0 0 rgba(224, 108, 117, 0.5);
+  background-color: rgba(224, 108, 117, 0.08);
+}
+
+/* Level 6: Xanh ngọc bích */
+.indent-guide.indent-lvl-6 {
+  box-shadow: inset 1.5px 0 0 0 rgba(86, 182, 194, 0.5);
+  background-color: rgba(86, 182, 194, 0.08);
+}
+
+/* Hỗ trợ Chế độ Sáng (Light Mode Support) */
+html[data-theme="light"] .indent-guide.indent-lvl-1 {
+  box-shadow: inset 1.5px 0 0 0 rgba(181, 137, 0, 0.45);
+  background-color: rgba(181, 137, 0, 0.09);
+}
+
+html[data-theme="light"] .indent-guide.indent-lvl-2 {
+  box-shadow: inset 1.5px 0 0 0 rgba(175, 0, 219, 0.45);
+  background-color: rgba(175, 0, 219, 0.09);
+}
+
+html[data-theme="light"] .indent-guide.indent-lvl-3 {
+  box-shadow: inset 1.5px 0 0 0 rgba(0, 122, 204, 0.45);
+  background-color: rgba(0, 122, 204, 0.09);
+}
+
+html[data-theme="light"] .indent-guide.indent-lvl-4 {
+  box-shadow: inset 1.5px 0 0 0 rgba(17, 99, 41, 0.45);
+  background-color: rgba(17, 99, 41, 0.09);
+}
+
+html[data-theme="light"] .indent-guide.indent-lvl-5 {
+  box-shadow: inset 1.5px 0 0 0 rgba(207, 34, 46, 0.45);
+  background-color: rgba(207, 34, 46, 0.09);
+}
+
+html[data-theme="light"] .indent-guide.indent-lvl-6 {
+  box-shadow: inset 1.5px 0 0 0 rgba(9, 105, 218, 0.45);
+  background-color: rgba(9, 105, 218, 0.09);
+}
+
+/* Data Input Panel */
+.viz-data-panel {
+  padding: 14px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.viz-drop-zone {
+  border: 2px dashed var(--border-active);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.04);
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.viz-drop-zone:hover, .viz-drop-zone.dragover {
+  border-color: var(--accent-cyan);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.viz-data-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+}
+
+.viz-preview-table-wrapper {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+
+.viz-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.viz-preview-table th {
+  background: #14203a;
+  color: var(--accent-cyan);
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  text-align: left;
+}
+
+.viz-preview-table td {
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+/* Console Log / Status Bar bên dưới Editor */
+.viz-console-panel {
+  height: 120px;
+  min-height: 80px;
+  background: #070b14;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+}
+
+.viz-console-header {
+  height: 28px;
+  background: #0e1629;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.viz-console-body {
+  flex: 1;
+  padding: 8px 10px;
+  font-family: "Fira Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-y: auto;
+  color: #94a3b8;
+}
+
+.viz-log-success { color: #34d399; }
+.viz-log-error { color: #f87171; }
+.viz-log-info { color: #60a5fa; }
+.viz-log-warn { color: #fbbf24; }
+
+/* Cột Phải: Canvas ECharts - NỀN TRẮNG MẶC ĐỊNH */
+.viz-chart-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  overflow: hidden;
+  position: relative;
+}
+
+.viz-chart-toolbar {
+  height: 40px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+}
+
+.viz-chart-container {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  position: relative;
+  background: #ffffff; /* NỀN TRẮNG MẶC ĐỊNH */
+}
+
+#echartsMainCanvas {
+  width: 100%;
+  height: 100%;
+  background: #ffffff; /* NỀN TRẮNG MẶC ĐỊNH */
+}
+
+.viz-chart-statusbar {
+  height: 26px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Modals (Preset Selector & AI Prompt) */
+.viz-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(3, 7, 18, 0.75);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.viz-modal-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-active);
+  border-radius: 12px;
+  width: 900px;
+  max-width: 95vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: modalZoomIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalZoomIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.viz-modal-header {
+  padding: 14px 18px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.viz-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.viz-modal-footer {
+  padding: 10px 18px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Grid Preset Biểu đồ */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.preset-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preset-card:hover {
+  border-color: var(--accent-cyan);
+  background: var(--bg-elevated);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.preset-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preset-card-icon {
+  font-size: 20px;
+}
+
+.preset-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.preset-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.preset-tag {
+  align-self: flex-start;
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--accent-sky);
+}
+
+/* Split Resizer */
+.viz-resizer {
+  width: 5px;
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+  z-index: 20;
+  transition: background 0.15s;
+}
+
+.viz-resizer:hover, .viz-resizer.resizing {
+  background: var(--accent-cyan);
+}

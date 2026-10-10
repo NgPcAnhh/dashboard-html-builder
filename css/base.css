@@ -1,0 +1,89 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #4ec9b0;
+  letter-spacing: 0.5px;
+}
+
+/* Thanh công cụ chung */
+.toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+button {
+  background: #0e639c;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: bold;
+  transition: 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+button:hover {
+  background: #1177bb;
+}
+
+button.btn-run {
+  background: #28a745;
+}
+
+button.btn-run:hover {
+  background: #218838;
+}
+
+button.btn-pipeline {
+  background: #b86200;
+}
+
+button.btn-pipeline:hover {
+  background: #d67300;
+}
+
+button.btn-prompt {
+  background: #6f42c1;
+}
+
+button.btn-prompt:hover {
+  background: #59359a;
+}
+
+button.btn-save-dir {
+  background: #d7ba7d;
+  color: #1e1e1e;
+}
+
+button.btn-save-dir:hover {
+  background: #e5cb93;
+}
+
+button.btn-clear {
+  background: #3e3e42;
+}
+
+button.btn-clear:hover {
+  background: #4e4e52;
+}

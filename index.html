@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trung Tâm Quản Lý Tools - MB Data Hub</title>
+
+  <!-- CSS Giao Diện Chính & Theme Hệ Thống -->
+  <link rel="stylesheet" href="css/hub.css">
+  <link rel="stylesheet" href="css/theme.css">
+
+  <!-- Dữ Liệu JSON Cục Bộ & JSON Storage Engine (Thay thế LocalStorage) -->
+  <script src="data/storage.js"></script>
+  <script src="js/json-storage.js"></script>
+
+  <!-- Script Khởi Tạo Theme Sớm (Chống chớp sáng/tối) -->
+  <script src="js/theme.js"></script>
+</head>
+
+<body>
+
+  <div class="app-layout">
+
+    <!-- ====================================================================
+         TOP NAVBAR CHÍNH (THAY THẾ SIDEBAR - GỌN GÀNG, TỐI ƯU KHÔNG GIAN)
+         ==================================================================== -->
+    <nav class="hub-navbar">
+      <div class="nav-left">
+        <a href="index.html" class="brand-wrapper" title="Trung Tâm Quản Lý Tools">
+          <div class="brand-logo">⚡</div>
+          <div class="brand-text">
+            <span class="brand-title">Tool Hub</span>
+            <span class="brand-subtitle">Data & Dev Platform</span>
+          </div>
+        </a>
+      </div>
+      <div class="nav-right">
+        <button class="btn-nav-action btn-add-custom-tool" id="btnOpenAddToolModalNav"
+          title="Thêm công cụ mới bằng đường link URL hoặc file HTML">
+          <span style="font-size:14px; font-weight:800;">＋</span> Thêm Tool Mới
+        </button>
+        <button class="btn-theme-toggle" id="navbarThemeToggle" title="Chuyển nhanh Giao diện Sáng / Tối">
+          <span class="theme-icon">🌙</span>
+          <span class="theme-text">Dark Mode</span>
+        </button>
+        <a href="#settingSection" class="btn-nav-action" id="btnScrollSettings"
+          title="Đi tới phần Cài đặt giao diện & hệ thống">
+          ⚙️ Cài Đặt
+        </a>
+      </div>
+    </nav>
+
+    <!-- ====================================================================
+         KHUNG NỘI DUNG CHÍNH (MAIN WRAPPER)
+         ==================================================================== -->
+    <main class="main-wrapper" id="mainWrapper">
+
+      <!-- ==================================================================
+           VIEW 1: MÀN HÌNH QUẢN LÝ CÁC TOOLS (MÀN HÌNH CHÍNH KHI MỞ)
+           ================================================================== -->
+      <section class="view-container active" id="viewToolsManager">
+        <!-- Tiêu Đề & Thống Kê Tổng Quan -->
+        <header class="view-header">
+          <div class="header-top-row">
+            <div class="view-title-group">
+              <h1>🧰 Trung Tâm Quản Lý Tools &amp; Tiện Ích</h1>
+              <p>Khám phá, khởi chạy các công cụ xử lý dữ liệu và tự do thêm liên kết website (ChatGPT, AI, tra cứu...)
+                hoặc file HTML nội bộ lưu trực tiếp trên trình duyệt.</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+              <div class="stat-chips-group">
+                <div class="stat-chip">
+                  <div class="stat-chip-icon">📊</div>
+                  <div class="stat-chip-info">
+                    <span class="stat-chip-value" id="statTotalTools">5</span>
+                    <span class="stat-chip-label">Tổng số tool</span>
+                  </div>
+                </div>
+                <div class="stat-chip">
+                  <div class="stat-chip-icon">🔗</div>
+                  <div class="stat-chip-info">
+                    <span class="stat-chip-value" id="statCustomTools">0</span>
+                    <span class="stat-chip-label">Tool tự thêm</span>
+                  </div>
+                </div>
+                <div class="stat-chip">
+                  <div class="stat-chip-icon">🎨</div>
+                  <div class="stat-chip-info">
+                    <span class="stat-chip-value">Dark Theme</span>
+                    <span class="stat-chip-label">Đen / Trắng</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <!-- Thanh Tìm Kiếm, Bộ Lọc Phân Loại & Sắp Xếp -->
+        <div class="controls-bar">
+          <div class="search-box-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" id="searchInput"
+              placeholder="Tìm kiếm tool theo tên, thẻ tag, hoặc mô tả..." />
+            <button class="search-clear-btn" id="searchClearBtn" title="Xóa tìm kiếm">✕</button>
+          </div>
+
+          <div class="filter-actions">
+            <!-- Bộ lọc danh mục & Nút Cài đặt nhanh -->
+            <div class="category-pills" id="categoryPills">
+              <button class="category-pill active" data-category="all">Tất cả</button>
+              <button class="category-pill" data-category="data">Xử lý Dữ liệu Excel</button>
+              <a href="#settingSection" class="category-pill" id="pillSettingsLink" style="text-decoration:none;">⚙️ Cài
+                Đặt Giao Diện</a>
+            </div>
+
+            <!-- Sắp xếp -->
+            <select class="sort-select" id="sortSelect" title="Sắp xếp danh sách tool">
+              <option value="az">Sắp xếp: Tên A → Z</option>
+              <option value="za">Sắp xếp: Tên Z → A</option>
+            </select>
+
+            <!-- Nút Thêm Tool Mới (Nổi bật) -->
+            <button class="btn-add-tool-cta" id="btnOpenAddToolModal"
+              title="Thêm công cụ mới bằng đường link URL hoặc file HTML">
+              <span style="font-size:15px; font-weight:800;">＋</span> Thêm Tool Mới
+            </button>
+          </div>
+        </div>
+
+        <!-- Lưới Thẻ Tools (Tools Grid) -->
+        <div class="tools-grid" id="toolsGrid">
+          <!-- Được render động từ JavaScript -->
+        </div>
+
+        <!-- Phân Trang (Pagination) -->
+        <footer class="pagination-wrapper" id="paginationWrapper">
+          <div class="pagination-info" id="paginationInfo">
+            Hiển thị danh sách công cụ
+          </div>
+
+          <div class="pagination-controls" id="paginationControls">
+            <!-- Nút Prev, 1, 2, Next được sinh bởi JS -->
+          </div>
+
+          <div class="page-size-selector">
+            <span>Hiển thị mỗi trang:</span>
+            <select class="page-size-select" id="pageSizeSelect">
+              <option value="3" selected>3 tools / trang</option>
+              <option value="6">6 tools / trang</option>
+              <option value="12">12 tools / trang</option>
+            </select>
+          </div>
+        </footer>
+
+        <!-- ==========================================================
+             PHẦN CÀI ĐẶT HỆ THỐNG & GIAO DIỆN (TÍCH HỢP TRỰC TIẾP TRÊN TRANG CHÍNH)
+             ========================================================== -->
+        <section class="integrated-settings-section" id="settingSection">
+          <div class="integrated-settings-header">
+            <h2>⚙️ Cài Đặt Hệ Thống & Giao Diện</h2>
+            <p>Tùy chọn chế độ hiển thị Sáng/Tối theo màu nhận diện MB Bank và cấu hình lưu trữ trực tiếp trên trình
+              duyệt.</p>
+          </div>
+
+          <!-- THEME CONFIGURATION CARD -->
+          <div class="theme-settings-container">
+            <div class="theme-settings-header">
+              <div class="theme-settings-title-group">
+                <span class="theme-settings-badge">🎨 Giao Diện Hệ Thống</span>
+                <h3 class="theme-settings-title">Chế Độ Hiển Thị & Tone Màu Giao Diện</h3>
+                <p class="theme-settings-subtitle">
+                  Chuyển đổi giao diện: <b>Màu Đen Chuẩn Công Cụ Xử Lý Excel JS (Dark Mode)</b> hoặc <b>Giao Diện Sáng Thanh Lịch (Light Mode)</b>. Cài đặt được lưu tự động và áp dụng tức thì cho toàn bộ công cụ.
+                </p>
+              </div>
+              <div class="theme-current-pill" id="themeCurrentPill">
+                <span class="theme-pill-dot"></span>
+                <span id="themeCurrentLabel">Đang dùng: Chế độ Tối (Dark Mode)</span>
+              </div>
+            </div>
+
+            <div class="theme-options-grid">
+
+              <!-- OPTION 1: DARK MODE (ÁO POLO MB NAVY) -->
+              <div class="theme-card-option active" data-mode="dark" id="themeCardDark">
+                <div class="theme-card-radio-row">
+                  <div class="theme-radio-circle">
+                    <span class="theme-check-icon">✓</span>
+                  </div>
+                  <div class="theme-card-identity">
+                    <span class="theme-card-badge dark">Đen / VS Code</span>
+                    <h4 class="theme-card-name">Chế Độ Tối (Dark Mode)</h4>
+                  </div>
+                </div>
+                <p class="theme-card-desc">Nền màu đen thuần chuẩn công cụ xử lý excel bằng javascript (#1e1e1e / #252526),
+                  viền #333 và điểm nhấn VS Code. Dịu mắt, tối ưu tập trung khi làm việc dữ liệu lâu.</p>
+                <div class="theme-preview-box preview-dark">
+                  <div class="preview-mock-header">
+                    <div class="preview-mock-dots"><span></span><span></span><span></span></div>
+                    <div class="preview-mock-stripes">
+                      <span class="stripe-royal"></span>
+                      <span class="stripe-cyan"></span>
+                      <span class="stripe-red"></span>
+                    </div>
+                  </div>
+                  <div class="preview-mock-body">
+                    <div class="preview-mock-card active">
+                      <div class="preview-mock-line w70"></div>
+                      <div class="preview-mock-line w40 accent"></div>
+                    </div>
+                    <div class="preview-mock-card">
+                      <div class="preview-mock-line w90"></div>
+                      <div class="preview-mock-line w50"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- OPTION 2: LIGHT MODE (ÁO POLO MB TRẮNG CỔ XANH) -->
+              <div class="theme-card-option" data-mode="light" id="themeCardLight">
+                <div class="theme-card-radio-row">
+                  <div class="theme-radio-circle">
+                    <span class="theme-check-icon">✓</span>
+                  </div>
+                  <div class="theme-card-identity">
+                    <span class="theme-card-badge light">Áo Polo MB Trắng</span>
+                    <h4 class="theme-card-name">Chế Độ Sáng (Light Mode)</h4>
+                  </div>
+                </div>
+                <p class="theme-card-desc">Nền trắng tinh khôi kết hợp cổ áo MB Royal Blue và đường sọc viền Cyan, ngôi
+                  sao đỏ MB. Tươi sáng, độ tương phản cao, hiện đại và chuẩn mực.</p>
+                <div class="theme-preview-box preview-light">
+                  <div class="preview-mock-header">
+                    <div class="preview-mock-dots"><span></span><span></span><span></span></div>
+                    <div class="preview-mock-stripes">
+                      <span class="stripe-royal"></span>
+                      <span class="stripe-cyan"></span>
+                      <span class="stripe-red"></span>
+                    </div>
+                  </div>
+                  <div class="preview-mock-body">
+                    <div class="preview-mock-card active">
+                      <div class="preview-mock-line w70"></div>
+                      <div class="preview-mock-line w40 accent"></div>
+                    </div>
+                    <div class="preview-mock-card">
+                      <div class="preview-mock-line w90"></div>
+                      <div class="preview-mock-line w50"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- OPTION 3: SYSTEM AUTO -->
+              <div class="theme-card-option" data-mode="system" id="themeCardSystem">
+                <div class="theme-card-radio-row">
+                  <div class="theme-radio-circle">
+                    <span class="theme-check-icon">✓</span>
+                  </div>
+                  <div class="theme-card-identity">
+                    <span class="theme-card-badge system">Hệ Thống</span>
+                    <h4 class="theme-card-name">Tự Động Theo Thiết Bị</h4>
+                  </div>
+                </div>
+                <p class="theme-card-desc">Tự động nhận diện và đồng bộ giao diện theo cài đặt Sáng hoặc Tối của hệ điều
+                  hành Windows / macOS trên máy tính của bạn.</p>
+                <div class="theme-preview-box preview-split">
+                  <div class="preview-split-half left">
+                    <div class="preview-mock-line w60"></div>
+                    <div class="preview-mock-line w40 accent"></div>
+                  </div>
+                  <div class="preview-split-half right">
+                    <div class="preview-mock-line w60"></div>
+                    <div class="preview-mock-line w40 accent"></div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- BANNER LƯU TRỮ FILE JSON -->
+          <div class="settings-banner">
+            <div class="settings-banner-info">
+              <h3>📁 Lưu Trữ Dữ Liệu Bằng File JSON (Thư Mục data/)</h3>
+              <p>Toàn bộ danh sách công cụ tùy chỉnh, ghim thanh bên và cài đặt giao diện được lưu trữ trực tiếp dưới dạng <b>File JSON</b> trong thư mục <code>data/app_storage.json</code> thay vì LocalStorage. Bạn có thể xuất, nạp hoặc liên kết thư mục data để đồng bộ tức thì.</p>
+              <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn-nav-action" id="btnLinkDataFolder" style="background: #0e639c; color: #fff; font-weight: 600;">📁 Liên Kết Thư Mục data/</button>
+                <button type="button" class="btn-nav-action" id="btnExportJson" style="background: #238636; color: #fff; font-weight: 600;">💾 Xuất File JSON</button>
+                <button type="button" class="btn-nav-action" id="btnImportJson" style="background: #8957e5; color: #fff; font-weight: 600;">📥 Nạp File JSON</button>
+                <input type="file" id="jsonFileInput" accept=".json" style="display: none;" />
+              </div>
+            </div>
+            <div class="settings-sync-badge" id="storageSyncBadge" style="background: #143525; border-color: #2ea043; color: #7ee787;">
+              <span style="color: #2ea043;">●</span> Đang dùng JSON Storage (Folder data/)
+            </div>
+          </div>
+        </section>
+
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- ====================================================================
+       MODAL THÊM / CHỈNH SỬA TOOL MỚI (LƯU TRỰC TIẾP VÀO LOCALSTORAGE)
+       ==================================================================== -->
+  <div class="modal-overlay" id="customToolModalOverlay">
+    <div class="modal-card modal-custom-tool">
+      <div class="modal-header">
+        <h3 class="modal-title" id="customToolModalTitle">
+          <span id="customToolModalIcon">➕</span>
+          <span id="customToolModalHeading">Thêm Công Cụ Mới (Link / HTML)</span>
+        </h3>
+        <button class="btn-close-modal" id="customToolModalCloseBtn" title="Đóng">✕</button>
+      </div>
+
+      <form id="customToolForm" class="custom-tool-form">
+        <input type="hidden" id="customToolEditId" value="" />
+
+        <!-- Gợi ý nhanh mẫu link phổ biến -->
+        <div class="form-preset-chips">
+          <span class="preset-label">Điền nhanh mẫu:</span>
+          <button type="button" class="preset-chip" data-preset="chatgpt">🤖 ChatGPT</button>
+          <button type="button" class="preset-chip" data-preset="gemini">🔮 Gemini</button>
+          <button type="button" class="preset-chip" data-preset="claude">🧠 Claude</button>
+          <button type="button" class="preset-chip" data-preset="localhtml">📄 File HTML Trong Máy</button>
+        </div>
+
+        <div class="form-grid-2">
+          <!-- Tên Tool -->
+          <div class="form-group">
+            <label class="form-label" for="toolNameInput">Tên công cụ <span class="required">*</span></label>
+            <input type="text" class="form-control" id="toolNameInput" placeholder="Ví dụ: ChatGPT AI Assistant"
+              required />
+          </div>
+
+          <!-- Icon / Emoji -->
+          <div class="form-group">
+            <label class="form-label" for="toolIconInput">Biểu tượng (Icon / Emoji)</label>
+            <div class="icon-picker-group">
+              <input type="text" class="form-control icon-input" id="toolIconInput" value="⚡" maxlength="6" />
+              <div class="quick-icons">
+                <span class="icon-option" data-icon="🤖" title="AI / Robot">🤖</span>
+                <span class="icon-option" data-icon="🌐" title="Web / Online">🌐</span>
+                <span class="icon-option" data-icon="📊" title="Báo cáo / Chart">📊</span>
+                <span class="icon-option" data-icon="🔍" title="Tra cứu / Tìm kiếm">🔍</span>
+                <span class="icon-option" data-icon="⚡" title="Tốc độ / Nhanh">⚡</span>
+                <span class="icon-option" data-icon="🛠️" title="Công cụ / Tool">🛠️</span>
+                <span class="icon-option" data-icon="📄" title="Tài liệu / HTML">📄</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Đường Dẫn URL / File Path -->
+        <div class="form-group">
+          <label class="form-label" for="toolUrlInput">
+            Đường dẫn Link Web hoặc File HTML <span class="required">*</span>
+          </label>
+          <input type="text" class="form-control" id="toolUrlInput"
+            placeholder="https://chatgpt.com hoặc my_tool.html hoặc file:///C:/path/app.html" required />
+          <span class="form-hint">
+            💡 Hỗ trợ: Link trang web ngoài (<code>https://...</code>), file HTML cùng thư mục (<code>tool.html</code>),
+            hoặc đường dẫn tuyệt đối trong máy.
+          </span>
+        </div>
+
+        <div class="form-grid-2">
+          <!-- Phân Loại / Danh Mục -->
+          <div class="form-group">
+            <label class="form-label" for="toolCategorySelect">Danh mục hiển thị</label>
+            <select class="form-control" id="toolCategorySelect">
+              <option value="ai">Trợ lý AI &amp; Chatbot</option>
+              <option value="data">Xử lý Dữ liệu</option>
+              <option value="web">Tiện ích Web &amp; Tra cứu</option>
+              <option value="report">Báo cáo &amp; Thống kê</option>
+              <option value="other">Công cụ Tiện ích khác</option>
+            </select>
+          </div>
+
+          <!-- Thẻ Tag -->
+          <div class="form-group">
+            <label class="form-label" for="toolTagsInput">Thẻ phân loại (Tags)</label>
+            <input type="text" class="form-control" id="toolTagsInput"
+              placeholder="Ví dụ: AI, Chatbot, OpenAI (cách nhau bởi dấu phẩy)" />
+          </div>
+        </div>
+
+        <!-- Mô Tả Ngắn -->
+        <div class="form-group">
+          <label class="form-label" for="toolDescInput">Mô tả ngắn gọn</label>
+          <textarea class="form-control" id="toolDescInput" rows="2"
+            placeholder="Mô tả chức năng hoặc công dụng của công cụ này..."></textarea>
+        </div>
+
+        <!-- Checkbox Mở trong tab mới & Tự động ghim -->
+        <div class="form-checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="toolOpenNewTabCheckbox" checked />
+            <span>Mở trong Tab trình duyệt mới (khuyên dùng cho link website ngoài)</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="toolAutoPinCheckbox" checked />
+            <span>Tự động ghim vào danh sách yêu thích</span>
+          </label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-cancel" id="customToolCancelBtn">Hủy Bỏ</button>
+          <button type="submit" class="btn-save-tool" id="customToolSubmitBtn">
+            💾 Lưu Vào File JSON
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL THÔNG TIN / KHỞI CHẠY CÔNG CỤ
+       ==================================================================== -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalTitle">Thông Tin Tool</h3>
+        <button class="btn-close-modal" id="modalCloseBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="modalDesc"></p>
+        <div id="modalTags"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-launch-tool" id="modalActionBtn">🚀 Mở Công Cụ Này</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       TOAST THÔNG BÁO TỰ ĐỘNG LƯU
+       ==================================================================== -->
+  <div class="toast-notification" id="toastNotification">
+    <span>✓</span>
+    <span id="toastMessage">Đã lưu cấu hình vào File JSON</span>
+  </div>
+
+  <!-- SCRIPT ĐIỀU KHIỂN HỆ THỐNG HUB -->
+  <script src="js/hub.js"></script>
+
+</body>
+
+</html>

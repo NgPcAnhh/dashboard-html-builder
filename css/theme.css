@@ -1,0 +1,1287 @@
+/* ==========================================================================
+   THEME STYLESHEET - MB BANK POLO PALETTE (DARK & LIGHT MODE)
+   Lấy cảm hứng trực tiếp từ 2 mẫu áo Polo MB Bank:
+   1. Áo Polo MB Xanh Navy (Dark Mode): Nền navy đậm, sọc tay Royal Blue & Cyan, sao đỏ MB.
+   2. Áo Polo MB Trắng (Light Mode): Thân áo trắng thanh thoát, cổ áo Royal Blue, viền sọc Cyan & sao đỏ MB.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. COLOR TOKENS: DARK MODE (DEFAULT / ÁO POLO MB NAVY)
+   -------------------------------------------------------------------------- */
+:root,
+html[data-theme="dark"] {
+  --theme-mode: 'dark';
+
+  /* Nền và Khối Bề Mặt (Tone Đen Chuẩn Công Cụ Xử Lý Excel Bằng Javascript: #1e1e1e / #252526) */
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #252526;
+  --bg-tertiary: #2d2d2d;
+  --bg-card: #252526;
+  --bg-card-hover: #2d2d30;
+  --bg-elevated: #2d2d2d;
+  --bg-surface: #252526;
+  --bg-excel-header: #252526;
+  --bg-table-scroll: #1e1e1e;
+  --bg-input: #141414;
+
+  /* Đường Viền & Hiệu Ứng Viền */
+  --border-subtle: #333333;
+  --border-active: #007acc;
+  --border-highlight: #3e3e42;
+
+  /* Màu Nhận Diện & Điểm Nhấn */
+  --primary: #007acc;               /* VS Code Accent Blue */
+  --primary-hover: #1177bb;
+  --primary-glow: rgba(0, 122, 204, 0.25);
+  
+  --accent-cyan: #4ec9b0;          /* Xanh ngọc JS / VS Code type */
+  --accent-sky: #9cdcfe;           /* Xanh da trời biến / variable JS */
+  --accent-red: #f48771;           /* Đỏ lỗi VS Code */
+  --accent-indigo: #ce9178;        /* Cam / string highlight */
+  --accent-emerald: #4ec9b0;       /* Xanh lá status / hàm */
+  --accent-amber: #dcdcaa;         /* Vàng hàm function */
+  --accent-rose: #f48771;
+
+  /* Văn Bản & Tương Phản */
+  --text-main: #d4d4d4;            /* Chữ xám sáng chuẩn VS Code */
+  --text-muted: #969696;           /* Chữ phụ */
+  --text-dim: #6e7681;             /* Ghi chú / comment */
+  --text-inverse: #1e1e1e;
+
+  /* Đổ Bóng & Hiệu Ứng */
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-glow: 0 0 20px rgba(0, 122, 204, 0.15);
+  
+  /* Nền Gradient Toàn Cục: Màu đen phẳng #1e1e1e chuẩn công cụ Excel JS */
+  --global-bg-gradient: none;
+}
+
+/* --------------------------------------------------------------------------
+   2. COLOR TOKENS: LIGHT MODE (ÁO POLO MB TRẮNG CỔ XANH)
+   -------------------------------------------------------------------------- */
+html[data-theme="light"] {
+  --theme-mode: 'light';
+
+  /* Nền và Khối Bề Mặt (Trắng Tinh Khôi Phối Xám Băng Thanh Mảnh) */
+  --bg-primary: #f3f6fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e9f0f9;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --bg-elevated: #ffffff;
+  --bg-surface: #f8fafc;
+  --bg-excel-header: #004ea8;       /* Cổ áo MB Royal Blue thanh lịch */
+  --bg-table-scroll: #ffffff;
+  --bg-input: #ffffff;
+
+  /* Đường Viền Nhẹ Nhàng & Điểm Nhấn Xanh */
+  --border-subtle: #dbe3ee;
+  --border-active: #004ea8;
+  --border-highlight: #0284c7;
+
+  /* Màu Nhận Diện MB Bank Trên Nền Trắng */
+  --primary: #004ea8;               /* MB Royal Blue đặc trưng cổ áo */
+  --primary-hover: #003a80;
+  --primary-glow: rgba(0, 78, 168, 0.18);
+
+  --accent-cyan: #0284c7;          /* Kẻ sọc viền tay */
+  --accent-sky: #0ea5e9;
+  --accent-red: #ef4444;           /* Ngôi sao đỏ MB Bank */
+  --accent-indigo: #4338ca;
+  --accent-emerald: #059669;
+  --accent-amber: #d97706;
+  --accent-rose: #e11d48;
+
+  /* Văn Bản Sắc Nét */
+  --text-main: #0f172a;            /* Xanh than đậm sắc sảo */
+  --text-muted: #334155;           /* Xám trung tính */
+  --text-dim: #64748b;             /* Xám nhạt chú thích */
+  --text-inverse: #ffffff;
+
+  /* Đổ Bóng & Hiệu Ứng Nhẹ Nhàng */
+  --shadow-card: 0 4px 20px rgba(15, 23, 42, 0.07);
+  --shadow-glow: 0 0 20px rgba(0, 78, 168, 0.12);
+
+  /* Nền Gradient Ánh Sáng */
+  --global-bg-gradient: 
+    radial-gradient(at 0% 0%, rgba(0, 78, 168, 0.08) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(2, 132, 199, 0.06) 0px, transparent 50%),
+    radial-gradient(at 50% 0%, rgba(255, 255, 255, 0.9) 0px, transparent 100%);
+
+  color-scheme: light;
+}
+
+/* Áp dụng nền động */
+body {
+  background-color: var(--bg-primary) !important;
+  background-image: var(--global-bg-gradient) !important;
+  color: var(--text-main) !important;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* --------------------------------------------------------------------------
+   2.1. ĐỒNG BỘ MÀU DROPDOWN (<select> & <option>) TRÁNH LỖI CHỮ TRẮNG NỀN TRẮNG
+   -------------------------------------------------------------------------- */
+:root,
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] select,
+:root select,
+.select-control,
+.sort-select,
+.page-size-select {
+  color-scheme: dark !important;
+  background-color: #252526 !important;
+  color: #d4d4d4 !important;
+  border-color: #3e3e42 !important;
+}
+
+html[data-theme="dark"] select option,
+:root select option,
+.select-control option,
+.sort-select option,
+.page-size-select option {
+  background-color: #252526 !important;
+  color: #d4d4d4 !important;
+  padding: 8px 12px !important;
+}
+
+html[data-theme="dark"] select option:checked,
+html[data-theme="dark"] select option:hover,
+:root select option:checked,
+:root select option:hover,
+.select-control option:checked,
+.select-control option:hover {
+  background-color: #007acc !important;
+  color: #ffffff !important;
+}
+
+/* Light mode select & option */
+html[data-theme="light"] select,
+html[data-theme="light"] .select-control,
+html[data-theme="light"] .sort-select,
+html[data-theme="light"] .page-size-select {
+  color-scheme: light !important;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] select option,
+html[data-theme="light"] .select-control option,
+html[data-theme="light"] .sort-select option,
+html[data-theme="light"] .page-size-select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  padding: 8px 12px !important;
+}
+
+html[data-theme="light"] select option:checked,
+html[data-theme="light"] select option:hover {
+  background-color: #004ea8 !important;
+  color: #ffffff !important;
+}
+
+/* --------------------------------------------------------------------------
+   3. NÚT TOGGLE GIAO DIỆN NHANH (QUICK THEME TOGGLE BUTTON)
+   -------------------------------------------------------------------------- */
+.btn-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  user-select: none;
+}
+
+.btn-theme-toggle:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--primary-glow);
+}
+
+.btn-theme-toggle .theme-icon {
+  font-size: 14px;
+  line-height: 1;
+  transition: transform 0.3s ease;
+}
+
+.btn-theme-toggle:hover .theme-icon {
+  transform: rotate(20deg) scale(1.15);
+}
+
+.btn-theme-toggle.theme-light-active {
+  border-color: rgba(0, 78, 168, 0.3);
+  color: #004ea8;
+}
+
+.btn-theme-toggle.theme-dark-active {
+  border-color: #3e3e42;
+  color: #4ec9b0;
+}
+
+/* --------------------------------------------------------------------------
+   4. THIẾT KẾ PHẦN CÀI ĐẶT GIAO DIỆN TRONG VIEW SETTINGS
+   -------------------------------------------------------------------------- */
+.theme-settings-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-card);
+  transition: all 0.25s ease;
+}
+
+.theme-settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.theme-settings-title-group {
+  max-width: 800px;
+}
+
+.theme-settings-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--primary);
+  background: var(--primary-glow);
+  padding: 3px 9px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.theme-settings-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 6px;
+  letter-spacing: -0.2px;
+}
+
+.theme-settings-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.theme-current-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.theme-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-emerald);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
+}
+
+/* Lưới thẻ chọn Theme */
+.theme-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.theme-card-option {
+  background: var(--bg-surface);
+  border: 2px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 18px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-card-option:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+  background: var(--bg-card-hover);
+  box-shadow: 0 6px 20px var(--primary-glow);
+}
+
+.theme-card-option.active {
+  border-color: var(--primary);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 1px var(--primary), 0 8px 24px var(--primary-glow);
+}
+
+/* Radio & Identity */
+.theme-card-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.theme-radio-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+}
+
+.theme-card-option.active .theme-radio-circle {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.theme-check-icon {
+  font-size: 11px;
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: all 0.2s ease;
+  font-weight: 900;
+}
+
+.theme-card-option.active .theme-check-icon {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.theme-card-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-card-badge {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.theme-card-badge.dark {
+  background: #1e1e1e;
+  color: #4ec9b0;
+  border: 1px solid #3e3e42;
+}
+
+.theme-card-badge.light {
+  background: #004ea8;
+  color: #ffffff;
+  border: 1px solid rgba(0, 78, 168, 0.3);
+}
+
+.theme-card-badge.system {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+.theme-card-name {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.theme-card-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 14px;
+  flex: 1;
+}
+
+/* Khung Mock Preview trực quan phản ánh 2 màu áo */
+.theme-preview-box {
+  height: 90px;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Áo Dark Navy / VS Code Preview */
+.theme-preview-box.preview-dark {
+  background: #1e1e1e;
+}
+.theme-preview-box.preview-dark .preview-mock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.theme-preview-box.preview-dark .preview-mock-dots span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #007acc;
+  margin-right: 3px;
+}
+.theme-preview-box .preview-mock-stripes {
+  display: flex;
+  gap: 2px;
+}
+.theme-preview-box .stripe-royal {
+  width: 14px;
+  height: 3px;
+  background: #007acc;
+  border-radius: 2px;
+}
+.theme-preview-box .stripe-cyan {
+  width: 14px;
+  height: 3px;
+  background: #4ec9b0;
+  border-radius: 2px;
+}
+.theme-preview-box .stripe-red {
+  width: 6px;
+  height: 3px;
+  background: #f48771;
+  border-radius: 2px;
+}
+.theme-preview-box.preview-dark .preview-mock-body {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.theme-preview-box.preview-dark .preview-mock-card {
+  flex: 1;
+  background: #252526;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.theme-preview-box.preview-dark .preview-mock-card.active {
+  border-color: #007acc;
+  background: #2d2d30;
+}
+.theme-preview-box .preview-mock-line {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.theme-preview-box .preview-mock-line.accent {
+  background: #38bdf8;
+}
+.theme-preview-box .preview-mock-line.w70 { width: 70%; }
+.theme-preview-box .preview-mock-line.w40 { width: 40%; }
+.theme-preview-box .preview-mock-line.w90 { width: 90%; }
+.theme-preview-box .preview-mock-line.w50 { width: 50%; }
+.theme-preview-box .preview-mock-line.w60 { width: 60%; }
+
+/* Áo White Polo */
+.theme-preview-box.preview-light {
+  background: #f4f7fb;
+}
+.theme-preview-box.preview-light .preview-mock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #004ea8;
+  padding: 3px 6px;
+  border-radius: 4px;
+  margin: -4px -4px 0 -4px;
+}
+.theme-preview-box.preview-light .preview-mock-dots span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+  margin-right: 3px;
+}
+.theme-preview-box.preview-light .preview-mock-body {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  margin-top: 2px;
+}
+.theme-preview-box.preview-light .preview-mock-card {
+  flex: 1;
+  background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-radius: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+.theme-preview-box.preview-light .preview-mock-card.active {
+  border-color: #004ea8;
+}
+.theme-preview-box.preview-light .preview-mock-line {
+  height: 5px;
+  border-radius: 3px;
+  background: #cbd5e1;
+}
+.theme-preview-box.preview-light .preview-mock-line.accent {
+  background: #004ea8;
+}
+
+/* System Split */
+.theme-preview-box.preview-split {
+  padding: 0;
+  display: flex;
+  flex-direction: row;
+}
+.preview-split-half {
+  flex: 1;
+  height: 100%;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.preview-split-half.left {
+  background: #1e1e1e;
+  border-right: 1px solid #333333;
+}
+.preview-split-half.left .preview-mock-line {
+  background: rgba(255, 255, 255, 0.2);
+}
+.preview-split-half.left .preview-mock-line.accent {
+  background: #38bdf8;
+}
+.preview-split-half.right {
+  background: #ffffff;
+}
+.preview-split-half.right .preview-mock-line {
+  background: #cbd5e1;
+}
+.preview-split-half.right .preview-mock-line.accent {
+  background: #004ea8;
+}
+
+/* --------------------------------------------------------------------------
+   5. HIỆU ỨNG ĐẶC BIỆT KHI CHUYỂN LIGHT MODE TRÊN TOÀN BỘ CÁC TRANG
+   -------------------------------------------------------------------------- */
+
+/* Tương thích cho Hub & Sidebar */
+html[data-theme="light"] .brand-title {
+  background: linear-gradient(90deg, #004ea8, #0f172a) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+html[data-theme="light"] .brand-logo {
+  background: linear-gradient(135deg, #004ea8, #0284c7) !important;
+  box-shadow: 0 4px 12px rgba(0, 78, 168, 0.25) !important;
+}
+
+html[data-theme="light"] .hub-navbar {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-bottom-color: #e2e8f0 !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .btn-nav-action {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .btn-nav-action:hover {
+  background: #004ea8 !important;
+  color: #ffffff !important;
+  border-color: #004ea8 !important;
+}
+
+html[data-theme="light"] .sidebar {
+  background: #ffffff !important;
+  border-right-color: #e2e8f0 !important;
+  box-shadow: 2px 0 16px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] .sidebar-toggle-btn {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .sidebar-toggle-btn:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .nav-item {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .nav-item:hover {
+  color: #004ea8 !important;
+  background: rgba(0, 78, 168, 0.06) !important;
+}
+
+html[data-theme="light"] .nav-item.active {
+  color: #004ea8 !important;
+  background: linear-gradient(90deg, rgba(0, 78, 168, 0.12), rgba(2, 132, 199, 0.05)) !important;
+  border-color: rgba(0, 78, 168, 0.25) !important;
+}
+
+html[data-theme="light"] .pinned-tool-item {
+  color: #334155 !important;
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+html[data-theme="light"] .pinned-tool-item:hover {
+  background: #edf2f9 !important;
+  color: #004ea8 !important;
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] .pinned-tool-item.primary-tool {
+  background: rgba(0, 78, 168, 0.08) !important;
+  border-color: rgba(0, 78, 168, 0.25) !important;
+  color: #004ea8 !important;
+}
+
+html[data-theme="light"] .stat-chip {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] .stat-chip-value {
+  color: #004ea8 !important;
+}
+
+html[data-theme="light"] .search-box-wrapper {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] .search-input {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .category-pill {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .category-pill:hover {
+  background: #f1f5f9 !important;
+  color: #004ea8 !important;
+}
+
+html[data-theme="light"] .category-pill.active {
+  background: #004ea8 !important;
+  border-color: #004ea8 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .sort-select,
+html[data-theme="light"] .page-size-select {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .tool-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .tool-card:hover {
+  border-color: #004ea8 !important;
+  box-shadow: 0 10px 28px rgba(0, 78, 168, 0.12) !important;
+}
+
+html[data-theme="light"] .tool-title,
+html[data-theme="light"] .tool-card-title,
+html[data-theme="light"] .tool-name,
+html[data-theme="light"] .pinned-tool-name,
+html[data-theme="light"] .available-tool-title,
+html[data-theme="light"] .reorder-name,
+html[data-theme="light"] .navbar-tool-title,
+html[data-theme="light"] .nav-brand-title,
+html[data-theme="light"] .brand-title,
+html[data-theme="light"] .view-title-group h1,
+html[data-theme="light"] .integrated-settings-header h2,
+html[data-theme="light"] .theme-settings-title,
+html[data-theme="light"] .theme-card-name,
+html[data-theme="light"] .stat-chip-value,
+html[data-theme="light"] .panel-header h3,
+html[data-theme="light"] .settings-banner-info h3,
+html[data-theme="light"] .empty-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .tool-desc,
+html[data-theme="light"] .tool-card-desc {
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .tag-item,
+html[data-theme="light"] .tool-tag {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .btn-launch-tool {
+  background: linear-gradient(135deg, #004ea8, #0284c7) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(0, 78, 168, 0.25) !important;
+}
+
+html[data-theme="light"] .page-btn {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .page-btn.active {
+  background: #004ea8 !important;
+  border-color: #004ea8 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .settings-panel {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .settings-panel-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .pinned-reorder-item,
+html[data-theme="light"] .available-tool-item {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .pinned-reorder-item:hover,
+html[data-theme="light"] .available-tool-item:hover {
+  background: #edf2f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* --------------------------------------------------------------------------
+   6. TƯƠNG THÍCH CHO EXCEL MATCHER (EXCEL_MATCHER.HTML)
+   -------------------------------------------------------------------------- */
+html[data-theme="light"] .top-navbar {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-bottom-color: #e2e8f0 !important;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .nav-brand-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .btn-nav-back {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .btn-nav-back:hover {
+  background: #004ea8 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .upload-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .upload-card-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .dropzone {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] .dropzone:hover {
+  background: rgba(0, 78, 168, 0.04) !important;
+  border-color: #004ea8 !important;
+}
+
+html[data-theme="light"] .dropzone-text {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .file-meta-box {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+html[data-theme="light"] .file-name-display {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .select-control {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .stat-pill {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .checks-config-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .checks-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .btn-check-preset {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .btn-check-preset:hover {
+  background: #004ea8 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .check-item-card {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+html[data-theme="light"] .check-item-card:hover {
+  background: #f1f5f9 !important;
+  border-color: #93c5fd !important;
+}
+
+html[data-theme="light"] .check-item-card.checked {
+  background: rgba(0, 78, 168, 0.05) !important;
+  border-color: #004ea8 !important;
+}
+
+html[data-theme="light"] .check-name {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .check-desc {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .prompt-feedback-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .prompt-card-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .btn-prompt-mode {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .btn-prompt-mode.active {
+  background: #004ea8 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .prompt-text-box {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .remarks-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-theme="light"] .remarks-header h3 {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .remark-entry {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+html[data-theme="light"] .remark-entry:hover {
+  background: #edf2f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] .remark-title-area {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .remark-body {
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .remark-body b {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .remark-action {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+  border-left-color: #004ea8 !important;
+}
+
+html[data-theme="light"] .preview-section-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .excel-view-box {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06) !important;
+}
+
+html[data-theme="light"] .excel-view-header {
+  background: #004ea8 !important;     /* Cổ áo Polo MB Bank Royal Blue */
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .excel-file-badge {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .excel-table-scroll {
+  background: #ffffff !important;
+}
+
+html[data-theme="light"] .excel-sheet-table th {
+  background: #004ea8 !important;
+  color: #ffffff !important;
+  border-right-color: rgba(255, 255, 255, 0.2) !important;
+  border-bottom: 2px solid #003a80 !important;
+}
+
+html[data-theme="light"] .excel-sheet-table th.col-row-num {
+  background: #00387a !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme="light"] .excel-sheet-table td {
+  border-right-color: #e2e8f0 !important;
+  border-bottom-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+html[data-theme="light"] .excel-sheet-table td.col-row-num {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+}
+
+html[data-theme="light"] .excel-sheet-table tr:hover td {
+  background: #eff6ff !important;
+  color: #004ea8 !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. TƯƠNG THÍCH CHO DATA PROCESSING (DATA_PROCESSING.HTML)
+   -------------------------------------------------------------------------- */
+.panel-left,
+.panel-right {
+  background: #1e1e1e;
+}
+
+html[data-theme="dark"] .panel-left,
+html[data-theme="dark"] .panel-right {
+  background: #1e1e1e !important;
+}
+
+html[data-theme="dark"] .source-container {
+  background: #252526 !important;
+  border-color: #333333 !important;
+}
+
+html[data-theme="dark"] .editor-wrapper {
+  background: #1e1e1e !important;
+  border-color: #333333 !important;
+}
+
+html[data-theme="dark"] .terminal-container {
+  background: #000000 !important;
+  border-color: #333333 !important;
+}
+
+html[data-theme="dark"] .line-numbers {
+  background: #1e1e1e !important;
+  color: #858585 !important;
+  border-right-color: #333333 !important;
+}
+
+html[data-theme="dark"] textarea#codeEditor {
+  background: transparent !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  caret-color: #569cd6 !important;
+}
+
+html[data-theme="dark"] textarea#codeEditor::selection {
+  background: rgba(38, 79, 120, 0.65) !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+html[data-theme="light"] .panel-left {
+  background: #f8fafc !important;
+  border-right-color: #e2e8f0 !important;
+}
+
+html[data-theme="light"] .panel-right {
+  background: #ffffff !important;
+}
+
+html[data-theme="light"] .source-container {
+  background: #ffffff !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+html[data-theme="light"] .terminal-container {
+  background: #000000 !important; /* Terminal giữ dark mode lập trình để dễ đọc log */
+}
+
+html[data-theme="light"] .editor-wrapper {
+  background: #ffffff !important;
+}
+
+html[data-theme="light"] .line-numbers {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+  border-right-color: #e2e8f0 !important;
+}
+
+html[data-theme="light"] textarea#codeEditor {
+  background: transparent !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  caret-color: #0969da !important;
+}
+
+html[data-theme="light"] textarea#codeEditor::selection {
+  background: rgba(9, 105, 218, 0.25) !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+html[data-theme="light"] .tab-item {
+  background: #e2e8f0 !important;
+  color: #475569 !important;
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] .tab-item.active {
+  background: #ffffff !important;
+  color: #004ea8 !important;
+  border-bottom-color: #004ea8 !important;
+}
+
+/* --------------------------------------------------------------------------
+   8. GLOBAL NAVBAR & NAVIGATION BUTTONS (DÙNG CHUNG CHO TẤT CẢ CÁC TRANG CON)
+   -------------------------------------------------------------------------- */
+.hub-navbar {
+  height: 64px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+  width: 100%;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+}
+
+.hub-navbar .nav-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hub-navbar .nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-nav-action {
+  text-decoration: none !important;
+  background: var(--bg-surface, #252526);
+  border: 1px solid var(--border-subtle, #333333);
+  color: var(--text-main, #d4d4d4);
+  padding: 7px 15px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  user-select: none;
+}
+
+.btn-nav-action:hover {
+  background: var(--primary, #007acc);
+  border-color: var(--primary, #007acc);
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--primary-glow, rgba(0, 122, 204, 0.35));
+}
+
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--primary), var(--accent-cyan));
+  color: #fff;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   9. TƯƠNG THÍCH LIGHT MODE CHO MODAL THÊM TOOL & FORM TÙY CHỈNH
+   -------------------------------------------------------------------------- */
+html[data-theme="light"] .modal-custom-tool {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.15) !important;
+}
+
+html[data-theme="light"] .modal-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .form-label {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .form-control {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .form-control:focus {
+  background: #ffffff !important;
+  border-color: #004ea8 !important;
+  box-shadow: 0 0 0 3px rgba(0, 78, 168, 0.15) !important;
+}
+
+html[data-theme="light"] .form-preset-chips {
+  background: #f0f7ff !important;
+  border-color: #bae6fd !important;
+}
+
+html[data-theme="light"] .preset-chip {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .preset-chip:hover {
+  background: #004ea8 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .icon-option {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] .icon-option:hover {
+  background: #004ea8 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .form-checkbox-row {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+html[data-theme="light"] .checkbox-label {
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .btn-card-action-small {
+  background: #f1f5f9 !important;
+}
+
+html[data-theme="light"] .badge-custom {
+  background: #e0f2fe !important;
+  color: #0284c7 !important;
+  border-color: #7dd3fc !important;
+}
+

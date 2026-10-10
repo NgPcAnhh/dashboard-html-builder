@@ -1,0 +1,10 @@
+/**
+ * Master Stylesheet for Data Processing Tools
+ * Combines all modular stylesheets
+ */
+@import url("base.css");
+@import url("layout.css");
+@import url("editor.css");
+@import url("inline-excel.css");
+@import url("terminal.css");
+@import url("modal.css");

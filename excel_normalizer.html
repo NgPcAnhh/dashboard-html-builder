@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chuẩn Hóa & Sắp Xếp Cột Excel Theo Kỳ Gốc - Data Tool</title>
+
+  <!-- CSS Giao Diện Normalizer & Theme MB Bank -->
+  <link rel="stylesheet" href="css/excel-normalizer.css">
+  <link rel="stylesheet" href="css/theme.css">
+
+  <!-- Thư viện SheetJS -->
+  <script src="js/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Dữ liệu JSON & JSON Storage Engine -->
+  <script src="data/storage.js"></script>
+  <script src="js/json-storage.js"></script>
+
+  <!-- Khởi tạo Theme sớm -->
+  <script src="js/theme.js"></script>
+</head>
+
+<body>
+
+  <!-- TOP NAVBAR -->
+  <nav class="hub-navbar">
+    <div class="nav-left">
+      <a href="index.html" class="btn-nav-action" title="Quay lại Màn hình Quản lý Tools">
+        🏠 Quản lý Tools
+      </a>
+      <div style="display: flex; align-items: center; gap: 10px; margin-left: 8px;">
+        <div class="brand-logo" style="width: 32px; height: 32px; font-size: 16px;">🔄</div>
+        <span class="navbar-tool-title" style="font-size: 14.5px; font-weight: 700; color: var(--text-main);">Chuẩn Hóa & Sắp Xếp Cột Excel Theo Kỳ Gốc</span>
+      </div>
+    </div>
+    <div class="nav-right" style="display: flex; align-items: center; gap: 10px;">
+      <button class="btn-theme-toggle" id="themeToggleBtn" title="Chuyển nhanh Giao diện Sáng / Tối">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-text">Dark Mode</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="normalizer-container">
+
+    <!-- HERO HEADER -->
+    <header class="normalizer-header">
+      <h1>⚡ Chuẩn Hóa & Tái Cấu Trúc Cột Excel Theo Kỳ Gốc</h1>
+      <p>
+        Giải quyết triệt để tình trạng <b>mỗi kỳ gửi một format khác nhau, thứ tự cột xáo trộn, sai lệch tên trường</b>. Hệ thống tự động nhận diện từ điển nghiệp vụ, hỗ trợ bạn ánh xạ chính xác và <b>sắp xếp lại 100% theo đúng thứ tự và tên cột của File Kỳ Gốc</b>, bảo toàn dữ liệu hợp lệ và xuất file sạch để lưu trữ hoặc nạp hệ thống.
+      </p>
+    </header>
+
+    <!-- DUAL UPLOAD SECTION -->
+    <section class="upload-grid">
+
+      <!-- KHỐI 1: FILE MẪU KỲ GỐC (TARGET SCHEMA) -->
+      <div class="upload-card" id="cardMaster">
+        <div class="upload-card-header">
+          <div class="upload-card-title">
+            <span>📋 File 1: File Mẫu Kỳ Gốc (Format Chuẩn Cần Đạt)</span>
+          </div>
+          <span class="upload-tag master">Schema Mục Tiêu</span>
+        </div>
+
+        <!-- Dropzone Master -->
+        <div class="dropzone" id="masterDropzone">
+          <div class="dropzone-icon">📁</div>
+          <div class="dropzone-text">Kéo thả File Kỳ Gốc (.xlsx, .csv) vào đây</div>
+          <div class="dropzone-sub">hoặc click để chọn file mẫu chuẩn từ máy tính</div>
+        </div>
+        <input type="file" id="masterFileInput" accept=".xlsx, .xls, .csv" style="display: none;" />
+
+        <!-- Meta box Master -->
+        <div class="file-meta-box" id="masterMetaBox">
+          <div class="file-meta-top">
+            <span class="file-name-display" id="masterFileName">master_template.xlsx</span>
+            <button class="btn-remove-file" id="masterBtnRemove" title="Đổi file khác">✕ Đổi file</button>
+          </div>
+          <div class="file-controls-row">
+            <label>Sheet:
+              <select class="select-control" id="masterSheetSelect"></select>
+            </label>
+            <label>Dòng tiêu đề:
+              <select class="select-control" id="masterHeaderRowSelect"></select>
+            </label>
+          </div>
+          <div class="stat-pills-row" id="masterStats"></div>
+        </div>
+      </div>
+
+      <!-- KHỐI 2: FILE KỲ MỚI (INCOMING DATA CẦN SẮP XẾP LẠI) -->
+      <div class="upload-card" id="cardIncoming">
+        <div class="upload-card-header">
+          <div class="upload-card-title">
+            <span>📥 File 2: File Kỳ Mới (Dữ Liệu Đang Bị Lệch Cột)</span>
+          </div>
+          <span class="upload-tag incoming">Dữ Liệu Cần Sắp Xếp</span>
+        </div>
+
+        <!-- Dropzone Incoming -->
+        <div class="dropzone" id="incomingDropzone">
+          <div class="dropzone-icon">📤</div>
+          <div class="dropzone-text">Kéo thả File Kỳ Mới (.xlsx, .csv) vào đây</div>
+          <div class="dropzone-sub">hoặc click để chọn file kỳ này từ máy tính</div>
+        </div>
+        <input type="file" id="incomingFileInput" accept=".xlsx, .xls, .csv" style="display: none;" />
+
+        <!-- Meta box Incoming -->
+        <div class="file-meta-box" id="incomingMetaBox">
+          <div class="file-meta-top">
+            <span class="file-name-display" id="incomingFileName">incoming_data.xlsx</span>
+            <button class="btn-remove-file" id="incomingBtnRemove" title="Đổi file khác">✕ Đổi file</button>
+          </div>
+          <div class="file-controls-row">
+            <label>Sheet:
+              <select class="select-control" id="incomingSheetSelect"></select>
+            </label>
+            <label>Dòng tiêu đề:
+              <select class="select-control" id="incomingHeaderRowSelect"></select>
+            </label>
+          </div>
+          <div class="stat-pills-row" id="incomingStats"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ACTION BAR: XEM CẤU TRÚC & SO SÁNH 2 FILE -->
+    <div class="compare-trigger-bar" id="compareTriggerBar" style="display: none;">
+      <div class="compare-trigger-left">
+        <span class="compare-trigger-icon">👁️</span>
+        <div>
+          <strong id="compareTriggerTitle">So Sánh Cấu Trúc & Dữ Liệu 2 File</strong>
+          <span class="compare-trigger-sub" id="compareTriggerSummary">Kỳ Gốc: 0 cột | Kỳ Mới: 0 cột</span>
+        </div>
+      </div>
+      <div class="compare-trigger-actions">
+        <button class="btn-compare-toggle active" id="btnToggleCompare">
+          <span id="btnToggleCompareText">Ẩn Cấu Trúc File ▲</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================================================================
+         PHẦN XEM & SO SÁNH CẤU TRÚC 2 FILE (SIDE-BY-SIDE SCHEMA INSPECTOR)
+         ================================================================== -->
+    <section class="schema-compare-card" id="schemaCompareSection" style="display: none;">
+      <div class="schema-compare-tabs">
+        <button class="schema-tab-btn active" id="tabBtnColumns" data-tab="splitColumns">
+          📋 1. So Sánh Danh Sách Cột Song Song
+        </button>
+        <button class="schema-tab-btn" id="tabBtnRaw" data-tab="rawData">
+          🔍 2. Xem Bảng Dữ Liệu Thô Của 2 File Excel
+        </button>
+      </div>
+
+      <!-- TAB 1: SO SÁNH DANH SÁCH CỘT -->
+      <div class="schema-tab-content active" id="tabContentSplitColumns">
+        <div class="schema-compare-columns-grid">
+          <!-- BÊN TRÁI: KỲ GỐC -->
+          <div class="schema-col-box master">
+            <div class="schema-col-box-header">
+              <div class="schema-col-box-title">
+                <span class="col-box-tag master">File 1: Kỳ Gốc (Mẫu Chuẩn)</span>
+                <span class="col-box-filename" id="schemaMasterName">—</span>
+              </div>
+              <div class="schema-col-box-meta" id="schemaMasterMeta">
+                0 cột • 0 dòng dữ liệu
+              </div>
+            </div>
+            <div class="schema-col-table-wrapper">
+              <table class="schema-col-table">
+                <thead>
+                  <tr>
+                    <th style="width: 45px; text-align: center;">Cột</th>
+                    <th>Tên Trường Chuẩn</th>
+                    <th style="width: 90px;">Kiểu Data</th>
+                    <th>Dữ Liệu Mẫu (2 dòng)</th>
+                  </tr>
+                </thead>
+                <tbody id="schemaMasterTbody">
+                  <tr><td colspan="4" class="empty-cell">Chưa nạp file kỳ gốc</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- BÊN PHẢI: KỲ MỚI -->
+          <div class="schema-col-box incoming">
+            <div class="schema-col-box-header">
+              <div class="schema-col-box-title">
+                <span class="col-box-tag incoming">File 2: Kỳ Mới (Cần Chuẩn Hóa)</span>
+                <span class="col-box-filename" id="schemaIncomingName">—</span>
+              </div>
+              <div class="schema-col-box-meta" id="schemaIncomingMeta">
+                0 cột • 0 dòng dữ liệu
+              </div>
+            </div>
+            <div class="schema-col-table-wrapper">
+              <table class="schema-col-table">
+                <thead>
+                  <tr>
+                    <th style="width: 45px; text-align: center;">Cột</th>
+                    <th>Tên Trường Kỳ Này</th>
+                    <th style="width: 90px;">Kiểu Data</th>
+                    <th>Dữ Liệu Mẫu (2 dòng)</th>
+                    <th style="width: 100px;">Đối Soát</th>
+                  </tr>
+                </thead>
+                <tbody id="schemaIncomingTbody">
+                  <tr><td colspan="5" class="empty-cell">Chưa nạp file kỳ mới</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: XEM BẢNG DỮ LIỆU THÔ CỦA 2 FILE -->
+      <div class="schema-tab-content" id="tabContentRawData" style="display: none;">
+        <div class="raw-data-toolbar">
+          <div class="raw-view-buttons">
+            <button class="raw-view-btn active" data-raw-mode="split">◫ Xem Song Song 2 File</button>
+            <button class="raw-view-btn" data-raw-mode="master">📁 Chỉ Xem Kỳ Gốc</button>
+            <button class="raw-view-btn" data-raw-mode="incoming">📥 Chỉ Xem Kỳ Mới</button>
+          </div>
+          <span class="raw-view-note">💡 Dòng được tô sáng là dòng được chọn làm Tiêu Đề (Header Row)</span>
+        </div>
+
+        <div class="raw-data-sheets-wrapper" id="rawDataSheetsWrapper">
+          <!-- Bảng Kỳ Gốc -->
+          <div class="raw-sheet-container master" id="rawMasterSheetContainer">
+            <div class="raw-sheet-title">
+              <span>📋 Kỳ Gốc: <b id="rawMasterSheetLabel">Sheet1</b> (<span id="rawMasterHeaderIndexLabel">Header ở dòng 1</span>)</span>
+            </div>
+            <div class="raw-sheet-scroll">
+              <table class="raw-sheet-table" id="rawMasterTable">
+                <tbody id="rawMasterTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Bảng Kỳ Mới -->
+          <div class="raw-sheet-container incoming" id="rawIncomingSheetContainer">
+            <div class="raw-sheet-title">
+              <span>📥 Kỳ Mới: <b id="rawIncomingSheetLabel">Sheet1</b> (<span id="rawIncomingHeaderIndexLabel">Header ở dòng 1</span>)</span>
+            </div>
+            <div class="raw-sheet-scroll">
+              <table class="raw-sheet-table" id="rawIncomingTable">
+                <tbody id="rawIncomingTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SMART COLUMN MAPPING MATRIX SECTION -->
+    <section class="mapping-section-card" id="mappingSectionCard">
+      <div class="mapping-section-header">
+        <div class="mapping-section-title">
+          <h2>🧭 Ma Trận Khớp Nối & Ánh Xạ Cột (Column Mapping Matrix)</h2>
+          <p>Hệ thống tự động phát hiện cột tương đương dựa trên tên gọi, từ điển nghiệp vụ và mẫu dữ liệu. Bạn có thể kiểm tra và tùy chỉnh lại nếu cần.</p>
+        </div>
+        <div class="mapping-quick-actions">
+          <span class="mapping-counter-badge" id="mappingCounterBadge">Đang quét cột...</span>
+          <button class="btn-mapping-action" id="btnAutoMatch" title="Quét lại tự động">
+            🔄 Tự Động Khớp Lại
+          </button>
+          <button class="btn-mapping-action" id="btnClearMapping" title="Xóa toàn bộ liên kết để chọn thủ công">
+            ✕ Bỏ Chọn Tất Cả
+          </button>
+        </div>
+      </div>
+
+      <!-- Bảng ánh xạ cột -->
+      <div class="mapping-table-wrapper">
+        <table class="mapping-table">
+          <thead>
+            <tr>
+              <th style="text-align: center; width: 60px;">Vị Trí</th>
+              <th style="width: 260px;">Cột Chuẩn Kỳ Gốc (Mục Tiêu)</th>
+              <th style="text-align: center; width: 40px;"></th>
+              <th style="width: 320px;">Lấy Dữ Liệu Từ Cột Kỳ Mới (Nguồn)</th>
+              <th>Mẫu Dữ Liệu Thực Tế</th>
+              <th style="width: 170px;">Độ Tin Cậy</th>
+            </tr>
+          </thead>
+          <tbody id="mappingTableBody">
+            <!-- Render từ JavaScript -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Tùy chọn làm sạch bổ sung -->
+      <div class="processing-options-bar">
+        <span style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--primary);">⚙️ Tùy Chọn Làm Sạch:</span>
+        <label class="option-checkbox-label" for="optTrimSpaces">
+          <input type="checkbox" id="optTrimSpaces" checked />
+          <span>Tự động xóa khoảng trắng thừa đầu/cuối (Trim Text)</span>
+        </label>
+        <label class="option-checkbox-label" for="optRemoveBlankRows">
+          <input type="checkbox" id="optRemoveBlankRows" checked />
+          <span>Loại bỏ các dòng rỗng hoàn toàn</span>
+        </label>
+        <label class="option-checkbox-label" for="optCleanNumbers">
+          <input type="checkbox" id="optCleanNumbers" checked />
+          <span>Chuẩn hóa số lưu dạng text (bỏ dấu phẩy ngăn cách)</span>
+        </label>
+      </div>
+
+      <!-- Thanh Thực Thi & Xuất File -->
+      <div class="action-execution-bar">
+        <button class="btn-preview-output" id="btnPreviewOutput" disabled>
+          <span>👁️ Xem Trước Bảng Kết Quả (Live Preview)</span>
+        </button>
+        <button class="btn-run-normalize" id="btnRunNormalize" disabled>
+          <span>⚡ Chuẩn Hóa & Xuất File Excel Đã Sắp Xếp (.xlsx)</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- LIVE PREVIEW OUTPUT SECTION -->
+    <section class="output-preview-section" id="outputPreviewSection">
+      <div class="output-card">
+        <div class="output-card-header">
+          <div class="output-card-title">
+            <span>📊 Xem Trước Dữ Liệu Đã Tái Cấu Trúc Theo Thứ Tự Kỳ Gốc</span>
+          </div>
+          <span class="output-stats-badge" id="outputStatsBadge">0 dòng x 0 cột</span>
+        </div>
+        <div class="output-table-scroll">
+          <table class="output-table">
+            <thead id="outputTableHead"></thead>
+            <tbody id="outputTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- JS ENGINE -->
+  <script src="js/excel-normalizer.js"></script>
+
+</body>
+
+</html>
