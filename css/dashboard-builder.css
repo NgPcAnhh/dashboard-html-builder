@@ -94,26 +94,50 @@ body.dashboard-app-body {
 }
 
 .db-title-input {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
-  color: var(--db-text-main);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 4px 8px;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 5px 12px;
   outline: none;
-  max-width: 320px;
-  transition: all 0.2s;
+  min-width: 260px;
+  max-width: 420px;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .db-title-input:hover {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
-  border-color: var(--db-card-border);
+  background: #f8fafc;
+  border-color: #94a3b8;
 }
 
 .db-title-input:focus {
-  background: var(--bg-input, #070d18);
-  border-color: var(--db-accent);
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.18) !important;
+}
+
+.db-title-edit-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.db-title-edit-hint:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  transform: scale(1.05);
 }
 
 .db-dirty-badge {

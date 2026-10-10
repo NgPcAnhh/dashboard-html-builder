@@ -5771,6 +5771,10 @@ ${expectedOutput}
   }
 
   async function writePackageToDirectoryHandle(targetDirHandle, folderDisplayName) {
+    const titleInput = document.getElementById('dashboardTitleInput');
+    if (titleInput && titleInput.value.trim()) {
+      DashboardState.present.title = titleInput.value.trim();
+    }
     const htmlFileName = 'index.html';
     const htmlContent = generateStandaloneDashboardHTML();
 
@@ -5854,6 +5858,12 @@ ${expectedOutput}
   }
 
   async function saveAndExportDashboardPackage(forcePickNewFolder = false) {
+    // 0. Luôn luôn đồng bộ tiêu đề mới nhất từ ô input trước khi tiến hành lưu
+    const titleInput = document.getElementById('dashboardTitleInput');
+    if (titleInput && titleInput.value.trim()) {
+      DashboardState.present.title = titleInput.value.trim();
+    }
+
     // 1. Nếu đã xác định thư mục con rồi (đã lưu lần đầu hoặc đã mở từ thư mục), từ lần 2 trở đi chỉ cần bấm Lưu là tự động lưu ngay mà không cần chọn lại
     if (!forcePickNewFolder && activeDashboardFolderHandle) {
       try {
