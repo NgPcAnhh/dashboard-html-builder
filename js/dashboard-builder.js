@@ -274,6 +274,174 @@
     }
   };
 
+  // ===========================================================================
+  // 0.9. FAST STREAMING CSV PARSER (CHUNK-TO-COLUMNAR, ZERO MAIN-THREAD CRASH)
+  // ===========================================================================
+  const FastCsvParser = {
+    async parse(file, options = {}) {
+      const chunkSize = 2 * 1024 * 1024; // 2MB chunk
+      const fileSize = file.size;
+      let offset = 0;
+      let leftover = '';
+      let isFirstChunk = true;
+      let colNames = [];
+      let colCount = 0;
+      let delimiter = ',';
+      let columnsData = null;
+
+      const decoder = new TextDecoder(options.encoding || 'utf-8');
+
+      while (offset < fileSize) {
+        const slice = file.slice(offset, Math.min(fileSize, offset + chunkSize));
+        const buffer = await slice.arrayBuffer();
+        const textChunk = leftover + decoder.decode(buffer, { stream: offset + chunkSize < fileSize });
+
+        const lineEnd = textChunk.lastIndexOf('\n');
+        if (lineEnd === -1) {
+          leftover = textChunk;
+          offset += chunkSize;
+          continue;
+        }
+
+        const processText = textChunk.substring(0, lineEnd);
+        leftover = textChunk.substring(lineEnd + 1);
+        const lines = processText.split(/\r?\n/);
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          if (isFirstChunk && colNames.length === 0) {
+            const commaCount = (line.match(/,/g) || []).length;
+            const semiCount = (line.match(/;/g) || []).length;
+            const tabCount = (line.match(/\t/g) || []).length;
+            if (semiCount > commaCount && semiCount > tabCount) delimiter = ';';
+            else if (tabCount > commaCount && tabCount > semiCount) delimiter = '\t';
+            else delimiter = ',';
+
+            colNames = FastCsvParser.parseCsvLine(line, delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+            colCount = colNames.length;
+            columnsData = Array.from({ length: colCount }, () => []);
+            continue;
+          }
+
+          const cells = FastCsvParser.parseCsvLine(line, delimiter);
+          for (let c = 0; c < colCount; c++) {
+            const raw = cells[c] !== undefined ? cells[c].trim().replace(/^["']|["']$/g, '') : '';
+            columnsData[c].push(raw);
+          }
+        }
+
+        offset += chunkSize;
+        if (options.onProgress) {
+          options.onProgress(Math.min(99, Math.round((offset / fileSize) * 100)));
+        }
+      }
+
+      if (leftover && leftover.trim() && colNames.length > 0) {
+        const cells = FastCsvParser.parseCsvLine(leftover.trim(), delimiter);
+        for (let c = 0; c < colCount; c++) {
+          const raw = cells[c] !== undefined ? cells[c].trim().replace(/^["']|["']$/g, '') : '';
+          columnsData[c].push(raw);
+        }
+      }
+
+      const rowCount = columnsData && columnsData[0] ? columnsData[0].length : 0;
+      const columns = {};
+      const columnTypes = {};
+
+      for (let c = 0; c < colCount; c++) {
+        const col = colNames[c];
+        const rawCol = columnsData[c];
+        let isAllNumeric = true;
+        let hasValue = false;
+        const uniqueMap = new Map();
+        let uniqueCounter = 0;
+        const indices = new Array(rowCount);
+        const rawNumbers = new Array(rowCount);
+
+        for (let r = 0; r < rowCount; r++) {
+          const val = rawCol[r];
+          if (val !== '') {
+            hasValue = true;
+            const num = Number(val);
+            if (isNaN(num)) {
+              isAllNumeric = false;
+            } else {
+              rawNumbers[r] = num;
+            }
+          } else {
+            rawNumbers[r] = 0;
+          }
+
+          if (!uniqueMap.has(val)) {
+            uniqueMap.set(val, uniqueCounter++);
+          }
+          indices[r] = uniqueMap.get(val);
+        }
+
+        if (isAllNumeric && hasValue) {
+          columnTypes[col] = 'numeric';
+          columns[col] = { type: 'numeric', data: rawNumbers };
+        } else {
+          const dictArray = new Array(uniqueMap.size);
+          uniqueMap.forEach((idx, key) => { dictArray[idx] = key; });
+          columnTypes[col] = 'dictionary';
+          columns[col] = { type: 'dictionary', dictionary: dictArray, indices };
+        }
+      }
+
+      return {
+        __isParquet: true,
+        rowCount,
+        colNames,
+        columnTypes,
+        columns,
+        metadata: {
+          fileName: file.name,
+          encodedAt: new Date().toISOString()
+        },
+        getValue(col, rowIdx) {
+          const colData = this.columns[col];
+          if (!colData) return undefined;
+          if (colData.type === 'numeric') return colData.data[rowIdx];
+          const dictIdx = colData.indices[rowIdx];
+          return colData.dictionary[dictIdx];
+        },
+        hasColumn(col) {
+          return Boolean(this.columns[col]);
+        },
+        extractRowObject(rowIdx) {
+          const rowObj = {};
+          for (let i = 0; i < this.colNames.length; i++) {
+            const col = this.colNames[i];
+            rowObj[col] = this.getValue(col, rowIdx);
+          }
+          return rowObj;
+        }
+      };
+    },
+
+    parseCsvLine(text, delimiter = ',') {
+      const res = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '"') {
+          inQuotes = !inQuotes;
+        } else if (ch === delimiter && !inQuotes) {
+          res.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      res.push(cur);
+      return res;
+    }
+  };
+
   const DEFAULT_SAMPLE_DATA = [
     { 'Ngày': '2026-01-15', 'Tháng': 'T1/2026', 'Khu Vực': 'Miền Bắc', 'Nhóm Sản Phẩm': 'Điện tử', 'Doanh Thu': 125000000, 'Lợi Nhuận': 28000000, 'Chi Phí': 97000000, 'Số Đơn Hàng': 450 },
     { 'Ngày': '2026-02-18', 'Tháng': 'T2/2026', 'Khu Vực': 'Miền Bắc', 'Nhóm Sản Phẩm': 'Gia dụng', 'Doanh Thu': 98000000, 'Lợi Nhuận': 19500000, 'Chi Phí': 78500000, 'Số Đơn Hàng': 380 },
@@ -318,16 +486,30 @@
       return list;
     },
 
-    getData(fileKey) {
+    getData(fileKey, fallbackCol = null) {
+      if (!fileKey && fallbackCol) {
+        const sources = this.getAvailableSources();
+        const found = sources.find(s => {
+          const raw = (this.files[s.fileName]?.sheets?.[s.sheetName]);
+          if (!raw) return false;
+          if (raw.__columns && raw.__columns.includes(fallbackCol)) return true;
+          if (Array.isArray(raw) && raw[0] && raw[0][fallbackCol] !== undefined) return true;
+          return false;
+        });
+        if (found) fileKey = found.key;
+      }
       if (!fileKey) {
         const sources = this.getAvailableSources();
         if (sources.length > 0) fileKey = sources[0].key;
       }
       if (!fileKey) return [];
-      const parts = fileKey.split('::');
+
+      const parts = String(fileKey).split('::');
       const fileName = parts[0];
       const sheetName = parts[1];
-      if (this.files[fileName] && this.files[fileName].sheets && this.files[fileName].sheets[sheetName]) {
+
+      // Trường hợp 1: fileKey dạng fileName::sheetName
+      if (fileName && sheetName && this.files[fileName]?.sheets?.[sheetName]) {
         const rawSheet = this.files[fileName].sheets[sheetName];
         if (rawSheet.__isParquet && !rawSheet.__table) {
           this.files[fileName].sheets[sheetName] = ParquetEngine.createVirtualArray(rawSheet);
@@ -335,6 +517,32 @@
         }
         return rawSheet;
       }
+
+      // Trường hợp 2: fileKey chỉ là fileName (lấy sheet đầu tiên)
+      if (this.files[fileName]?.sheets) {
+        const sKeys = Object.keys(this.files[fileName].sheets);
+        if (sKeys.length > 0) {
+          const rawSheet = this.files[fileName].sheets[sKeys[0]];
+          if (rawSheet.__isParquet && !rawSheet.__table) {
+            this.files[fileName].sheets[sKeys[0]] = ParquetEngine.createVirtualArray(rawSheet);
+            return this.files[fileName].sheets[sKeys[0]];
+          }
+          return rawSheet;
+        }
+      }
+
+      // Trường hợp 3: fileKey là sheetName nằm trong file bất kỳ
+      for (const fn in this.files) {
+        if (this.files[fn]?.sheets?.[fileKey]) {
+          const rawSheet = this.files[fn].sheets[fileKey];
+          if (rawSheet.__isParquet && !rawSheet.__table) {
+            this.files[fn].sheets[fileKey] = ParquetEngine.createVirtualArray(rawSheet);
+            return this.files[fn].sheets[fileKey];
+          }
+          return rawSheet;
+        }
+      }
+
       return [];
     },
 
@@ -607,11 +815,12 @@
       description: 'Dashboard BI tùy biến hoàn toàn bằng JavaScript ECharts và nguồn dữ liệu Excel',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      theme: { themeMode: 'light', canvasBg: 'default' },
+      theme: { themeMode: 'light', canvasBg: (typeof localStorage !== 'undefined' && localStorage.getItem('mb_dashboard_canvas_bg')) || 'dots' },
       tabs: [
         { id: 'tab_overview', name: '📊 Tổng Quan Kinh Doanh' }
       ],
       activeTabId: 'tab_overview',
+      tabFilters: {}, // tabId -> { column -> filterState }
       items: [] // charts, frames, widgets
     },
     past: [],
@@ -621,12 +830,19 @@
     zoom: 1.0,
     pan: { x: 0, y: 0 },
     selectedItemId: null,
-    activeFilters: {}, // column -> value or { op, val }
+    activeFilters: {}, // column -> value or { op, val } of current active tab
+    tabFilters: {},    // tabId -> { column -> filterState }
 
     pushSnapshot() {
       syncItemPositionsFromDOM();
+      if (!this.tabFilters) this.tabFilters = {};
+      const currentTab = this.present.activeTabId || 'default';
+      this.tabFilters[currentTab] = JSON.parse(JSON.stringify(this.activeFilters || {}));
+      this.present.tabFilters = JSON.parse(JSON.stringify(this.tabFilters));
       this.present.activeFilters = JSON.parse(JSON.stringify(this.activeFilters || {}));
-      this.past.push(JSON.parse(JSON.stringify(this.present)));
+      const snapshot = JSON.parse(JSON.stringify(this.present));
+      delete snapshot.embeddedData; // Loại bỏ dữ liệu dataset lớn khỏi mảng lịch sử Undo/Redo để tránh nhân bản RAM
+      this.past.push(snapshot);
       if (this.past.length > 30) this.past.shift();
       this.future = [];
       this.isDirty = true;
@@ -637,10 +853,16 @@
 
     undo() {
       if (this.past.length === 0) return;
+      if (!this.tabFilters) this.tabFilters = {};
+      const currentTab = this.present.activeTabId || 'default';
+      this.tabFilters[currentTab] = JSON.parse(JSON.stringify(this.activeFilters || {}));
+      this.present.tabFilters = JSON.parse(JSON.stringify(this.tabFilters));
       this.present.activeFilters = JSON.parse(JSON.stringify(this.activeFilters || {}));
       this.future.push(JSON.parse(JSON.stringify(this.present)));
       this.present = this.past.pop();
-      this.activeFilters = JSON.parse(JSON.stringify(this.present.activeFilters || {}));
+      this.tabFilters = JSON.parse(JSON.stringify(this.present.tabFilters || {}));
+      const curTab = this.present.activeTabId || 'default';
+      this.activeFilters = JSON.parse(JSON.stringify((this.tabFilters && this.tabFilters[curTab]) || this.present.activeFilters || {}));
       this.isDirty = true;
       renderAllTabs();
       renderCanvas();
@@ -650,10 +872,16 @@
 
     redo() {
       if (this.future.length === 0) return;
+      if (!this.tabFilters) this.tabFilters = {};
+      const currentTab = this.present.activeTabId || 'default';
+      this.tabFilters[currentTab] = JSON.parse(JSON.stringify(this.activeFilters || {}));
+      this.present.tabFilters = JSON.parse(JSON.stringify(this.tabFilters));
       this.present.activeFilters = JSON.parse(JSON.stringify(this.activeFilters || {}));
       this.past.push(JSON.parse(JSON.stringify(this.present)));
       this.present = this.future.pop();
-      this.activeFilters = JSON.parse(JSON.stringify(this.present.activeFilters || {}));
+      this.tabFilters = JSON.parse(JSON.stringify(this.present.tabFilters || {}));
+      const curTab = this.present.activeTabId || 'default';
+      this.activeFilters = JSON.parse(JSON.stringify((this.tabFilters && this.tabFilters[curTab]) || this.present.activeFilters || {}));
       this.isDirty = true;
       renderAllTabs();
       renderCanvas();
@@ -1026,22 +1254,22 @@
     const s = String(val).trim();
     if (!s) return null;
 
+    // YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD (ưu tiên chuẩn ISO trước)
+    const ymd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+    if (ymd) {
+      const year = parseInt(ymd[1], 10);
+      const month = parseInt(ymd[2], 10) - 1;
+      const day = parseInt(ymd[3], 10);
+      const d = new Date(year, month, day);
+      if (!isNaN(d.getTime())) return d.getTime();
+    }
+
     // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
     const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
     if (dmy) {
       const day = parseInt(dmy[1], 10);
       const month = parseInt(dmy[2], 10) - 1;
       const year = parseInt(dmy[3], 10);
-      const d = new Date(year, month, day);
-      if (!isNaN(d.getTime())) return d.getTime();
-    }
-
-    // YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
-    const ymd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
-    if (ymd) {
-      const year = parseInt(ymd[1], 10);
-      const month = parseInt(ymd[2], 10) - 1;
-      const day = parseInt(ymd[3], 10);
       const d = new Date(year, month, day);
       if (!isNaN(d.getTime())) return d.getTime();
     }
@@ -1061,6 +1289,8 @@
 
   function formatDateToYMD(val) {
     if (!val) return '';
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
     const ts = parseDateToTimestamp(val);
     if (!ts) return '';
     const d = new Date(ts);
@@ -1089,11 +1319,18 @@
     return checkedCount > 0 && (validDateCount / checkedCount) >= 0.6;
   }
 
-  function getFilteredData(sourceKey = null, excludeCols = []) {
+  function getFilteredData(sourceKey = null, excludeCols = [], targetTabId = null) {
     let rows = DataStore.getData(sourceKey);
     if (!rows || rows.length === 0) return [];
 
-    const filters = DashboardState.activeFilters || {};
+    const tabId = targetTabId || DashboardState.present.activeTabId || 'default';
+    let filters = {};
+    if (DashboardState.tabFilters && DashboardState.tabFilters[tabId]) {
+      filters = DashboardState.tabFilters[tabId];
+    } else if (tabId === DashboardState.present.activeTabId) {
+      filters = DashboardState.activeFilters || {};
+    }
+
     const filterKeys = Object.keys(filters).filter(k => !excludeCols.includes(k));
     if (filterKeys.length === 0) return rows;
 
@@ -1134,8 +1371,13 @@
           if (isDateFilter || op === 'date_range') {
             const cellTs = parseDateToTimestamp(cell);
             if (cellTs === null) return false;
-            const startTs = startDate ? parseDateToTimestamp(startDate) : (minVal ? parseDateToTimestamp(minVal) : null);
-            const endTs = endDate ? parseDateToTimestamp(endDate) : (maxVal ? parseDateToTimestamp(maxVal) : null);
+            let startTs = startDate ? parseDateToTimestamp(startDate) : (minVal ? parseDateToTimestamp(minVal) : null);
+            let endTs = endDate ? parseDateToTimestamp(endDate) : (maxVal ? parseDateToTimestamp(maxVal) : null);
+            if (startTs !== null && endTs !== null && startTs > endTs) {
+              const tmp = startTs;
+              startTs = endTs;
+              endTs = tmp;
+            }
             if (startTs !== null && cellTs < startTs) return false;
             if (endTs !== null && cellTs > endTs) return false;
             continue;
@@ -1148,8 +1390,14 @@
 
           const numCell = Number(cell);
           const hasNumCell = !isNaN(numCell);
-          const numMin = sMin !== '' ? Number(sMin) : null;
-          const numMax = sMax !== '' ? Number(sMax) : null;
+          let numMin = sMin !== '' ? Number(sMin) : null;
+          let numMax = sMax !== '' ? Number(sMax) : null;
+
+          if (numMin !== null && numMax !== null && !isNaN(numMin) && !isNaN(numMax) && numMin > numMax) {
+            const tmp = numMin;
+            numMin = numMax;
+            numMax = tmp;
+          }
 
           if (hasNumCell && ((numMin !== null && !isNaN(numMin)) || (numMax !== null && !isNaN(numMax)))) {
             if (numMin !== null && !isNaN(numMin) && numCell < numMin) return false;
@@ -1157,8 +1405,15 @@
             continue;
           } else {
             // Chuỗi
-            if (sMin !== '' && String(cell).toLowerCase() < sMin.toLowerCase()) return false;
-            if (sMax !== '' && String(cell).toLowerCase() > sMax.toLowerCase()) return false;
+            let strMin = sMin !== '' ? sMin.toLowerCase() : null;
+            let strMax = sMax !== '' ? sMax.toLowerCase() : null;
+            if (strMin && strMax && strMin > strMax) {
+              const tmp = strMin;
+              strMin = strMax;
+              strMax = tmp;
+            }
+            if (strMin !== null && String(cell).toLowerCase() < strMin) return false;
+            if (strMax !== null && String(cell).toLowerCase() > strMax) return false;
             continue;
           }
         }
@@ -1265,13 +1520,14 @@
     });
   }
 
-  function getFilteredFilesObject() {
+  function getFilteredFilesObject(targetTabId = null) {
     const allFiles = DataStore.getAllFilesObject();
     const filtered = {};
+    const tabId = targetTabId || DashboardState.present.activeTabId || 'default';
     for (const fileName in allFiles) {
       filtered[fileName] = {};
       for (const sheetName in allFiles[fileName]) {
-        filtered[fileName][sheetName] = getFilteredData(`${fileName}::${sheetName}`);
+        filtered[fileName][sheetName] = getFilteredData(`${fileName}::${sheetName}`, [], tabId);
       }
     }
     return filtered;
@@ -1318,7 +1574,32 @@
     return option;
   }
 
-  function evaluateEChartsCode(code, optionalData = null, context = {}) {
+  function enhanceInteractiveGraphic(option) {
+    if (!option || typeof option !== 'object' || !option.graphic) return option;
+    const processItem = (g) => {
+      if (!g || typeof g !== 'object') return;
+      const hasInteraction = typeof g.onclick === 'function' || typeof g.onmouseover === 'function' || typeof g.onmousedown === 'function';
+      if (hasInteraction) {
+        if (g.cursor === undefined) g.cursor = 'pointer';
+        if (!g.style) g.style = {};
+        if (g.style.cursor === undefined) g.style.cursor = 'pointer';
+        if (g.z === undefined) g.z = 100;
+        if (g.silent === true) g.silent = false;
+      }
+      if (Array.isArray(g.children)) {
+        g.children.forEach(processItem);
+      }
+    };
+
+    if (Array.isArray(option.graphic)) {
+      option.graphic.forEach(processItem);
+    } else if (typeof option.graphic === 'object') {
+      processItem(option.graphic);
+    }
+    return option;
+  }
+
+  function evaluateEChartsCode(code, optionalData = null, context = {}, chartInstance = null) {
     if (!code || !code.trim()) {
       return { option: {}, error: 'Chưa có code JavaScript cấu hình.', logs: [] };
     }
@@ -1333,12 +1614,13 @@
 
     try {
       const allFiles = DataStore.getAllFilesObject();
-      const filteredFiles = getFilteredFilesObject();
+      const tabId = context.tabId || DashboardState.present.activeTabId || 'default';
+      const filteredFiles = getFilteredFilesObject(tabId);
 
       // Dữ liệu mặc định: dùng optionalData nếu được truyền (kể cả mảng rỗng []), nếu không thì gọi getFilteredData()
       let defaultData = optionalData;
       if (defaultData === null || defaultData === undefined) {
-        defaultData = getFilteredData();
+        defaultData = getFilteredData(null, [], tabId);
       }
 
       // Hàm tiện ích getSheet(sheetName, fileName?) cho người dùng gọi trong code -> TRẢ VỀ DỮ LIỆU ĐÃ LỌC
@@ -1368,37 +1650,105 @@
         return filteredFiles[fileName] || null;
       };
 
-      const safeContext = {
-        setFilter: (col, val) => {
-          DashboardState.activeFilters[col] = val;
+      const setFilter = (col, val) => {
+        if (!col) return;
+        if (!DashboardState.tabFilters) DashboardState.tabFilters = {};
+        if (!DashboardState.tabFilters[tabId]) DashboardState.tabFilters[tabId] = {};
+        if (val === undefined || val === null || val === '' || val === 'all') {
+          delete DashboardState.tabFilters[tabId][col];
+          if (tabId === (DashboardState.present?.activeTabId || 'default')) {
+            delete DashboardState.activeFilters[col];
+          }
+        } else {
+          DashboardState.tabFilters[tabId][col] = val;
+          if (tabId === (DashboardState.present?.activeTabId || 'default')) {
+            DashboardState.activeFilters[col] = val;
+          }
+        }
+        if (DashboardState.present) {
+          DashboardState.present.tabFilters = JSON.parse(JSON.stringify(DashboardState.tabFilters));
+          DashboardState.present.activeFilters = JSON.parse(JSON.stringify(DashboardState.activeFilters));
+        }
+        renderCanvas();
+      };
+
+      const resetFilter = (col = null) => {
+        if (col) {
+          setFilter(col, null);
+        } else {
+          if (!DashboardState.tabFilters) DashboardState.tabFilters = {};
+          DashboardState.tabFilters[tabId] = {};
+          if (tabId === (DashboardState.present?.activeTabId || 'default')) {
+            DashboardState.activeFilters = {};
+          }
+          if (DashboardState.present) {
+            DashboardState.present.tabFilters = JSON.parse(JSON.stringify(DashboardState.tabFilters));
+            DashboardState.present.activeFilters = JSON.parse(JSON.stringify(DashboardState.activeFilters));
+          }
           renderCanvas();
-        },
-        activeFilters: DashboardState.activeFilters,
+        }
+      };
+
+      const curFilters = (DashboardState.tabFilters && DashboardState.tabFilters[tabId]) || DashboardState.activeFilters || {};
+      const safeContext = {
+        setFilter,
+        resetFilter,
+        activeFilters: curFilters,
         rawFiles: allFiles,
         getRawSheet,
+        tabId,
+        myChart: chartInstance,
+        chart: chartInstance,
         ...context
       };
 
-      // Khởi tạo hàm thực thi nhận data, files, getSheet, getFile, context, echarts, XLSX, console
-      const evalFunc = new Function('data', 'files', 'getSheet', 'getFile', 'context', 'echarts', 'XLSX', 'console', `
+      // Khởi tạo hàm thực thi nhận data, files, getSheet, getFile, context, echarts, XLSX, console, myChart, chart, setFilter, resetFilter
+      const evalFunc = new Function(
+        'data', 'files', 'getSheet', 'getFile', 'context', 'echarts', 'XLSX', 'console', 'myChart', 'chart', 'setFilter', 'resetFilter',
+        `
+        let option = null;
         try {
           ${code}
         } catch (e) {
           return { __error: e.stack || e.message };
         }
-      `);
+        if (typeof option === 'object' && option !== null) return option;
+        `
+      );
 
       const startTime = performance.now();
-      const result = evalFunc(defaultData, filteredFiles, getSheet, getFile, safeContext, window.echarts, window.XLSX, customConsole);
+      let result = evalFunc(
+        defaultData,
+        filteredFiles,
+        getSheet,
+        getFile,
+        safeContext,
+        window.echarts,
+        window.XLSX,
+        customConsole,
+        chartInstance,
+        chartInstance,
+        setFilter,
+        resetFilter
+      );
       const durationMs = Math.round(performance.now() - startTime);
 
       if (result && result.__error) {
         return { option: {}, error: result.__error, logs, durationMs };
       }
 
-      if (!result || typeof result !== 'object') {
-        return { option: {}, error: 'Code phải return về một object option ECharts (Ví dụ: return { xAxis: {...}, series: [...] };)', logs, durationMs };
+      if ((!result || typeof result !== 'object') && chartInstance && chartInstance.getOption) {
+        const curOpt = chartInstance.getOption();
+        if (curOpt && Object.keys(curOpt).length > 0) {
+          result = curOpt;
+        }
       }
+
+      if (!result || typeof result !== 'object') {
+        return { option: {}, error: 'Code phải return về một object option ECharts (Ví dụ: return { xAxis: {...}, series: [...] };) hoặc gán myChart.setOption(option);', logs, durationMs };
+      }
+
+      enhanceInteractiveGraphic(result);
 
       // Tự động tối ưu hoá ECharts option nếu tập dữ liệu lớn
       const optimizedOption = optimizeChartOptionForLargeData(result);
@@ -1750,6 +2100,134 @@ return {
     }
   ]
 };`;
+    },
+
+    interactive_buttons(sourceKey = null) {
+      const cols = this._getCols(sourceKey);
+      const catCol = cols.includes('Tháng') ? 'Tháng' : (cols[1] || cols[0] || 'Danh Mục');
+      const m1 = cols.includes('Doanh Thu') ? 'Doanh Thu' : (cols[3] || 'Doanh Thu');
+      const m2 = cols.includes('Lợi Nhuận') ? 'Lợi Nhuận' : (cols[4] || 'Lợi Nhuận');
+
+      return `// 💡 BIỂU ĐỒ TƯƠNG TÁC CÓ PHÍM CHỨC NĂNG (ECharts Graphic Buttons)
+// Bạn có thể viết các nút bấm vào 'graphic', gán onclick, gọi myChart.setOption(...) hoặc setFilter(...) để tương tác!
+
+const categories = data.map(r => r['${catCol}']);
+const val1 = data.map(r => Number(r['${m1}']) || 0);
+const val2 = data.map(r => Number(r['${m2}']) || 0);
+
+let activeMetric = '${m1}';
+let chartType = 'bar';
+
+const option = {
+  title: {
+    text: 'Biểu Đồ Tương Tác: ' + activeMetric,
+    subtext: 'Bấm các nút phím chức năng trên biểu đồ để chuyển đổi góc nhìn',
+    textStyle: { color: '#0f172a', fontSize: 14, fontWeight: 700 },
+    subtextStyle: { color: '#64748b', fontSize: 11 }
+  },
+  tooltip: { trigger: 'axis', valueFormatter: v => new Intl.NumberFormat('vi-VN').format(v) },
+  grid: { left: '4%', right: '4%', bottom: '10%', top: '22%', containLabel: true },
+  xAxis: {
+    type: 'category',
+    data: categories,
+    axisLabel: { color: '#64748b' }
+  },
+  yAxis: {
+    type: 'value',
+    splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
+    axisLabel: { color: '#64748b' }
+  },
+  series: [
+    {
+      name: activeMetric,
+      type: chartType,
+      data: val1,
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: '#0284c7' },
+          { offset: 1, color: '#0369a1' }
+        ]),
+        borderRadius: [4, 4, 0, 0]
+      }
+    }
+  ],
+  // 🔘 CÁC PHÍM CHỨC NĂNG GRAPHIC TƯƠNG TÁC TRỰC TIẾP TRÊN BIỂU ĐỒ:
+  graphic: [
+    {
+      type: 'group',
+      right: 16,
+      top: 10,
+      children: [
+        // Phím 1: Xem ${m1}
+        {
+          type: 'rect',
+          z: 100,
+          left: 0,
+          top: 0,
+          shape: { width: 100, height: 28, r: 6 },
+          style: { fill: '#0284c7', cursor: 'pointer' },
+          textContent: {
+            type: 'text',
+            style: { text: '📊 ${m1}', fill: '#ffffff', font: 'bold 11px sans-serif' }
+          },
+          textConfig: { position: 'inside' },
+          onclick: function () {
+            activeMetric = '${m1}';
+            myChart.setOption({
+              title: { text: 'Biểu Đồ: ' + activeMetric },
+              series: [{ name: activeMetric, type: chartType, data: val1, itemStyle: { color: '#0284c7' } }]
+            });
+          }
+        },
+        // Phím 2: Xem ${m2}
+        {
+          type: 'rect',
+          z: 100,
+          left: 110,
+          top: 0,
+          shape: { width: 100, height: 28, r: 6 },
+          style: { fill: '#10b981', cursor: 'pointer' },
+          textContent: {
+            type: 'text',
+            style: { text: '💰 ${m2}', fill: '#ffffff', font: 'bold 11px sans-serif' }
+          },
+          textConfig: { position: 'inside' },
+          onclick: function () {
+            activeMetric = '${m2}';
+            myChart.setOption({
+              title: { text: 'Biểu Đồ: ' + activeMetric },
+              series: [{ name: activeMetric, type: chartType, data: val2, itemStyle: { color: '#10b981' } }]
+            });
+          }
+        },
+        // Phím 3: Đổi Cột / Đường (Toggle Bar / Line)
+        {
+          type: 'rect',
+          z: 100,
+          left: 220,
+          top: 0,
+          shape: { width: 95, height: 28, r: 6 },
+          style: { fill: '#f1f5f9', stroke: '#cbd5e1', lineWidth: 1, cursor: 'pointer' },
+          textContent: {
+            type: 'text',
+            style: { text: '📈 Đổi Cột/Đường', fill: '#0f172a', font: '11px sans-serif' }
+          },
+          textConfig: { position: 'inside' },
+          onclick: function () {
+            chartType = chartType === 'bar' ? 'line' : 'bar';
+            const curData = activeMetric === '${m1}' ? val1 : val2;
+            const curColor = activeMetric === '${m1}' ? '#0284c7' : '#10b981';
+            myChart.setOption({
+              series: [{ type: chartType, smooth: true, data: curData, itemStyle: { color: curColor }, lineStyle: { width: 3 } }]
+            });
+          }
+        }
+      ]
+    }
+  ]
+};
+
+return option;`;
     }
   };
 
@@ -1757,6 +2235,14 @@ return {
   // 5. CHART CODE STUDIO MODAL (CHUẨN 100% GIAO DIỆN ECHARTS VISUALIZER)
   // ===========================================================================
   const CORPORATE_CHART_PRESETS = [
+    {
+      id: 'interactive-buttons',
+      name: 'Biểu Đồ Tương Tác Phím Chức Năng (Graphic Buttons)',
+      icon: '🔘',
+      category: 'Tương Tác Nâng Cao',
+      desc: 'Tích hợp các nút bấm chuyển đổi chỉ số (Doanh thu/Lợi nhuận) và kiểu hiển thị (Cột/Đường) trực tiếp ngay trên mặt biểu đồ.',
+      generator: () => ChartTemplates.interactive_buttons()
+    },
     {
       id: 'bar-gradient',
       name: 'Cột Gradient Doanh Thu Doanh Nghiệp',
@@ -2184,7 +2670,14 @@ return {
 
       printCeTerminal('Đang biên dịch và thực thi mã ECharts...', 'info');
 
-      const { option, error, logs, durationMs } = evaluateEChartsCode(code);
+      let chart = null;
+      if (previewDom) {
+        chart = echarts.getInstanceByDom(previewDom);
+        if (chart) chart.dispose();
+        chart = echarts.init(previewDom, null);
+      }
+
+      const { option, error, logs, durationMs } = evaluateEChartsCode(code, null, {}, chart);
 
       if (logs && logs.length > 0) {
         logs.forEach(l => printCeTerminal(l.text, l.type));
@@ -2201,10 +2694,7 @@ return {
         printCeTerminal(`Biên dịch thành công trong ${durationMs || 1}ms. Biểu đồ đã hiển thị trên Live Preview.`, 'success');
         if (dataCountEl) dataCountEl.textContent = 'Sẵn sàng';
 
-        if (previewDom) {
-          let chart = echarts.getInstanceByDom(previewDom);
-          if (chart) chart.dispose();
-          chart = echarts.init(previewDom, null);
+        if (chart && option && Object.keys(option).length > 0) {
           chart.setOption(option, true);
         }
       }
@@ -2712,20 +3202,39 @@ ${expectedOutput}
       const modal = document.getElementById('widgetConfigModal');
       const titleEl = document.getElementById('widgetModalTitle');
       const bodyEl = document.getElementById('widgetModalBody');
-      const cols = DataStore.getColumns();
-
+      const availableSources = DataStore.getAvailableSources();
       let existing = null;
       if (itemId) {
         existing = DashboardState.present.items.find(i => i.id === itemId);
       }
 
+      let curSourceKey = existing?.dataSourceKey || '';
+      if (!curSourceKey && existing?.filterColumn) {
+        const found = availableSources.find(s => DataStore.getColumns(s.key).includes(existing.filterColumn));
+        if (found) curSourceKey = found.key;
+      }
+      if (!curSourceKey && availableSources.length > 0) {
+        curSourceKey = availableSources[0].key;
+      }
+
+      let cols = DataStore.getColumns(curSourceKey);
+      if (cols.length === 0 && availableSources.length > 0) {
+        curSourceKey = availableSources[0].key;
+        cols = DataStore.getColumns(curSourceKey);
+      }
+
+      if (bodyEl) bodyEl.scrollTop = 0;
+
       if (type === 'filter') {
         const modalBox = modal.querySelector('.db-simple-box');
-        if (modalBox) modalBox.style.maxWidth = '760px';
+        if (modalBox) {
+          modalBox.style.maxWidth = '760px';
+          modalBox.style.maxHeight = '90vh';
+        }
 
         titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:8px;"><span>🔍</span><span>${existing ? 'Chỉnh Sửa Bộ Lọc Dữ Liệu' : 'Thêm Bộ Lọc Dữ Liệu (Filter Studio)'}</span></span>`;
-        const curCol = existing?.filterColumn || cols[0] || '';
-        const allDataRows = DataStore.getData();
+        const curCol = existing?.filterColumn && cols.includes(existing.filterColumn) ? existing.filterColumn : (cols[0] || '');
+        const allDataRows = DataStore.getData(curSourceKey, curCol);
         const isColDate = isProbableDateColumn(curCol, allDataRows);
         const curType = existing?.filterType || (isColDate ? 'date' : 'range');
         const curParent = existing?.parentFilterId || '';
@@ -2743,11 +3252,31 @@ ${expectedOutput}
 
         bodyEl.innerHTML = `
           <div class="filter-studio-wrapper">
-            <!-- 1. CHỌN CỘT DỮ LIỆU NGUỒN -->
+            <!-- 1. CHỌN NGUỒN DỮ LIỆU & SHEET -->
             <div class="filter-studio-sec">
               <div class="filter-studio-sec-header">
                 <div class="filter-studio-sec-title">
                   <span class="filter-studio-step-badge">1</span>
+                  <span>Nguồn Dữ Liệu & Sheet Cần Lọc</span>
+                </div>
+                <span style="font-size:11px;color:#0284c7;font-weight:600;">Hỗ trợ lọc mọi Sheet của file Excel</span>
+              </div>
+
+              <div style="margin-top:6px;">
+                <div style="position:relative;display:flex;align-items:center;">
+                  <span style="position:absolute;left:12px;font-size:14px;pointer-events:none;">📑</span>
+                  <select class="ce-select" id="wmFilterSourceSelect" style="width:100%;padding-left:36px;height:38px;font-weight:600;font-size:13px;border:1.5px solid #cbd5e1;background:#fff;border-radius:8px;">
+                    ${availableSources.map(s => `<option value="${escapeHtml(s.key)}" ${s.key === curSourceKey ? 'selected' : ''}>📄 ${escapeHtml(s.label)}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. CHỌN CỘT DỮ LIỆU NGUỒN -->
+            <div class="filter-studio-sec">
+              <div class="filter-studio-sec-header">
+                <div class="filter-studio-sec-title">
+                  <span class="filter-studio-step-badge">2</span>
                   <span>Cột Dữ Liệu Cần Lọc (Excel Column)</span>
                 </div>
                 <div id="wmFilterTypeMetaBadge" class="filter-col-meta-badge"></div>
@@ -2776,11 +3305,11 @@ ${expectedOutput}
               </div>
             </div>
 
-            <!-- 2. LỰA CHỌN KIỂU BỘ LỌC TRỰC QUAN (6 CARDS) -->
+            <!-- 3. LỰA CHỌN KIỂU BỘ LỌC TRỰC QUAN (6 CARDS) -->
             <div class="filter-studio-sec">
               <div class="filter-studio-sec-header">
                 <div class="filter-studio-sec-title">
-                  <span class="filter-studio-step-badge">2</span>
+                  <span class="filter-studio-step-badge">3</span>
                   <span>Chọn Kiểu Bộ Lọc Trực Quan (Interactive Filter Type)</span>
                 </div>
                 <span style="font-size:11px;color:#64748b;font-weight:600;">Chuẩn BI & Analytics</span>
@@ -2846,11 +3375,11 @@ ${expectedOutput}
               </div>
             </div>
 
-            <!-- 3. THIẾT LẬP NHÃN & TOÁN TỬ -->
+            <!-- 4. THIẾT LẬP NHÃN & TOÁN TỬ -->
             <div class="filter-studio-sec">
               <div class="filter-studio-sec-header">
                 <div class="filter-studio-sec-title">
-                  <span class="filter-studio-step-badge">3</span>
+                  <span class="filter-studio-step-badge">4</span>
                   <span>Thiết Lập Nhãn & Liên Kết Bộ Lọc</span>
                 </div>
               </div>
@@ -2889,7 +3418,7 @@ ${expectedOutput}
               </div>
             </div>
 
-            <!-- 4. KHUNG XEM TRƯỚC TRỰC QUAN TRÊN CANVAS (LIVE PREVIEW) -->
+            <!-- 5. KHUNG XEM TRƯỚC TRỰC QUAN TRÊN CANVAS (LIVE PREVIEW) -->
             <div class="filter-live-preview-box">
               <div class="filter-live-preview-header">
                 <div class="filter-live-preview-title">
@@ -3009,6 +3538,7 @@ ${expectedOutput}
         };
 
         setTimeout(() => {
+          const sourceSel = document.getElementById('wmFilterSourceSelect');
           const colSel = document.getElementById('wmFilterColSelect');
           const typeHiddenInp = document.getElementById('wmFilterTypeSelect');
           const titleInp = document.getElementById('wmFilterTitleInput');
@@ -3020,8 +3550,9 @@ ${expectedOutput}
           const autoTitleBtn = document.getElementById('wmBtnAutoTitle');
           const hideHCheck = document.getElementById('wmHideHeaderCheckbox');
 
-          const refreshColumnInsights = (selectedCol) => {
-            const rows = DataStore.getData();
+          const refreshColumnInsights = (selectedCol, customSourceKey = null) => {
+            const curSrc = customSourceKey || sourceSel?.value || curSourceKey;
+            const rows = DataStore.getData(curSrc, selectedCol);
             const isDate = isProbableDateColumn(selectedCol, rows);
             const vals = Array.from(new Set(rows.map(r => r[selectedCol]).filter(v => v !== null && v !== undefined && v !== ''))).slice(0, 10);
             const totalUnique = new Set(rows.map(r => r[selectedCol])).size;
@@ -3060,7 +3591,34 @@ ${expectedOutput}
 
           // Khởi tạo trạng thái ban đầu
           updateModalOps(curType, curOp);
-          refreshColumnInsights(curCol);
+          refreshColumnInsights(curCol, curSourceKey);
+
+          // Sự kiện đổi Nguồn Dữ Liệu & Sheet
+          sourceSel?.addEventListener('change', () => {
+            const nextSourceKey = sourceSel.value;
+            const nextCols = DataStore.getColumns(nextSourceKey);
+            if (colSel) {
+              colSel.innerHTML = nextCols.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+              if (nextCols.length > 0) {
+                colSel.value = nextCols[0];
+                if (titleInp && (!existing || titleInp.value.startsWith('Lọc: '))) {
+                  titleInp.value = `Lọc: ${nextCols[0]}`;
+                }
+                const nextRows = DataStore.getData(nextSourceKey, nextCols[0]);
+                if (isProbableDateColumn(nextCols[0], nextRows)) {
+                  cardsGrid?.querySelectorAll('.filter-type-card').forEach(c => {
+                    c.classList.toggle('active', c.dataset.type === 'date');
+                  });
+                  typeHiddenInp.value = 'date';
+                  updateModalOps('date', 'date_range');
+                }
+                refreshColumnInsights(nextCols[0], nextSourceKey);
+              } else {
+                if (badgesEl) badgesEl.innerHTML = '<span style="color:#94a3b8;font-size:11px;">Sheet không có dữ liệu cột</span>';
+                if (uniqueCountEl) uniqueCountEl.textContent = '0 giá trị';
+              }
+            }
+          });
 
           // Sự kiện bấm chọn Card loại bộ lọc
           cardsGrid?.querySelectorAll('.filter-type-card').forEach(card => {
@@ -3078,7 +3636,7 @@ ${expectedOutput}
               else if (nextType === 'comparison') defOp = '>';
               updateModalOps(nextType, defOp);
 
-              const rows = DataStore.getData();
+              const rows = DataStore.getData(sourceSel?.value, colSel.value);
               const vals = Array.from(new Set(rows.map(r => r[colSel.value]).filter(v => v !== null && v !== undefined && v !== ''))).slice(0, 10);
               renderFilterLiveMockup(colSel.value, nextType, titleInp.value, vals);
             });
@@ -3090,7 +3648,7 @@ ${expectedOutput}
             if (titleInp && (!existing || titleInp.value.startsWith('Lọc: '))) {
               titleInp.value = `Lọc: ${selectedCol}`;
             }
-            const rows = DataStore.getData();
+            const rows = DataStore.getData(sourceSel?.value, selectedCol);
             if (isProbableDateColumn(selectedCol, rows)) {
               // Tự động chuyển card sang date
               cardsGrid?.querySelectorAll('.filter-type-card').forEach(c => {
@@ -3099,14 +3657,14 @@ ${expectedOutput}
               typeHiddenInp.value = 'date';
               updateModalOps('date', 'date_range');
             }
-            refreshColumnInsights(selectedCol);
+            refreshColumnInsights(selectedCol, sourceSel?.value);
           });
 
           // Sự kiện bấm nút Đặt lại tên theo cột
           autoTitleBtn?.addEventListener('click', () => {
             if (titleInp && colSel) {
               titleInp.value = `Lọc: ${colSel.value}`;
-              const rows = DataStore.getData();
+              const rows = DataStore.getData(sourceSel?.value, colSel.value);
               const vals = Array.from(new Set(rows.map(r => r[colSel.value]).filter(v => v !== null && v !== undefined && v !== ''))).slice(0, 10);
               renderFilterLiveMockup(colSel.value, typeHiddenInp.value, titleInp.value, vals);
             }
@@ -3114,13 +3672,13 @@ ${expectedOutput}
 
           // Cập nhật live preview khi gõ tên hoặc toggle ẩn header
           titleInp?.addEventListener('input', () => {
-            const rows = DataStore.getData();
+            const rows = DataStore.getData(sourceSel?.value, colSel.value);
             const vals = Array.from(new Set(rows.map(r => r[colSel.value]).filter(v => v !== null && v !== undefined && v !== ''))).slice(0, 10);
             renderFilterLiveMockup(colSel.value, typeHiddenInp.value, titleInp.value, vals);
           });
 
           hideHCheck?.addEventListener('change', () => {
-            const rows = DataStore.getData();
+            const rows = DataStore.getData(sourceSel?.value, colSel.value);
             const vals = Array.from(new Set(rows.map(r => r[colSel.value]).filter(v => v !== null && v !== undefined && v !== ''))).slice(0, 10);
             renderFilterLiveMockup(colSel.value, typeHiddenInp.value, titleInp.value, vals);
           });
@@ -3334,7 +3892,10 @@ ${expectedOutput}
       if (modal) {
         modal.classList.remove('open');
         const modalBox = modal.querySelector('.db-simple-box');
-        if (modalBox) modalBox.style.maxWidth = '540px';
+        if (modalBox) {
+          modalBox.style.maxWidth = '540px';
+          modalBox.style.maxHeight = '90vh';
+        }
       }
     },
 
@@ -3344,6 +3905,7 @@ ${expectedOutput}
       const hideHeader = Boolean(document.getElementById('wmHideHeaderCheckbox')?.checked);
 
       if (this.currentType === 'filter') {
+        const sourceKey = document.getElementById('wmFilterSourceSelect')?.value || '';
         const col = document.getElementById('wmFilterColSelect').value;
         const fType = document.getElementById('wmFilterTypeSelect')?.value || 'range';
         const parentId = document.getElementById('wmFilterParentSelect')?.value || '';
@@ -3359,6 +3921,7 @@ ${expectedOutput}
         if (this.editingItemId) {
           const item = DashboardState.present.items.find(i => i.id === this.editingItemId);
           if (item) {
+            item.dataSourceKey = sourceKey;
             item.filterColumn = col;
             item.filterType = fType;
             item.parentFilterId = parentId;
@@ -3373,6 +3936,7 @@ ${expectedOutput}
             id: newId,
             type: 'filter',
             name: name,
+            dataSourceKey: sourceKey,
             filterColumn: col,
             filterType: fType,
             parentFilterId: parentId,
@@ -3732,7 +4296,12 @@ ${expectedOutput}
   <link rel="stylesheet" href="../../css/dashboard-builder.css">
 
   <!-- Apache ECharts Library (Offline Local + CDN Fallback) -->
-  <script src="../../js/echarts.min.js"><\/script>
+  <script src="js/echarts.min.js"><\/script>
+  <script>
+    if (typeof echarts === 'undefined') {
+      document.write('<script src="../../js/echarts.min.js"><\\/script>');
+    }
+  <\/script>
   <script>
     if (typeof echarts === 'undefined') {
       document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"><\\/script>');
@@ -3740,7 +4309,12 @@ ${expectedOutput}
   <\/script>
 
   <!-- SheetJS Library for Excel Processing (Offline Local + CDN Fallback) -->
-  <script src="../../js/xlsx.full.min.js"><\/script>
+  <script src="js/xlsx.full.min.js"><\/script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="../../js/xlsx.full.min.js"><\\/script>');
+    }
+  <\/script>
   <script>
     if (typeof XLSX === 'undefined') {
       document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\\/script>');
@@ -3927,6 +4501,11 @@ ${expectedOutput}
       background-image: linear-gradient(90deg, #e2e8f0 1.5px, transparent 1.5px) !important;
       background-size: 24px 24px !important;
     }
+    .canvas-bg-horizontal {
+      background-color: #ffffff !important;
+      background-image: linear-gradient(#e2e8f0 1.5px, transparent 1.5px) !important;
+      background-size: 24px 24px !important;
+    }
     .canvas-bg-grid {
       background-color: #ffffff !important;
       background-image: linear-gradient(#e2e8f0 1.2px, transparent 1.2px), linear-gradient(90deg, #e2e8f0 1.2px, transparent 1.2px) !important;
@@ -3936,14 +4515,14 @@ ${expectedOutput}
     .db-canvas-viewport {
       padding: 0; margin: 0 auto; width: 100%;
       display: flex; justify-content: center; align-items: flex-start;
-      overflow-x: hidden; overflow-y: visible;
+      overflow: visible;
       min-height: 100%; height: auto; flex: 1;
     }
 
     .db-canvas {
       width: 1360px !important; min-width: 1360px !important; max-width: 1360px !important;
       margin: 0 auto !important; position: relative !important;
-      overflow: hidden !important; box-sizing: border-box !important;
+      overflow: visible !important; box-sizing: border-box !important;
       background-color: #ffffff !important;
       border: 2px solid #2563eb !important;
       border-radius: 10px !important;
@@ -3969,6 +4548,34 @@ ${expectedOutput}
       display: flex; flex-direction: column; overflow: hidden;
       box-sizing: border-box; cursor: default;
       transition: box-shadow 0.2s ease;
+    }
+    .db-item-box.is-type-filter,
+    .db-top-filter-bar,
+    .db-top-filter-body,
+    .db-top-filter-item-wrapper {
+      overflow: visible !important;
+    }
+    .db-item-box.is-type-filter .db-item-body,
+    .db-item-box.is-type-filter .db-filter-container,
+    .db-item-box.is-type-filter .db-filter-controls-row,
+    .db-item-box.is-type-filter .db-filter-multiselect-container,
+    .db-top-filter-item-wrapper .db-item-body,
+    .db-top-filter-item-wrapper .db-filter-container,
+    .db-top-filter-item-wrapper .db-filter-controls-row,
+    .db-top-filter-item-wrapper .db-filter-multiselect-container {
+      overflow: visible !important;
+    }
+    .db-top-filter-item-wrapper .db-filter-label {
+      display: none !important;
+    }
+    .db-item-box.is-type-filter.dropdown-open,
+    .db-item-box.is-type-filter:has(.db-filter-multiselect-dropdown.open),
+    .db-top-filter-item-wrapper.dropdown-open,
+    .db-top-filter-item-wrapper:has(.db-filter-multiselect-dropdown.open),
+    .db-top-filter-body:has(.db-filter-multiselect-dropdown.open),
+    .db-top-filter-bar.dropdown-open,
+    .db-top-filter-bar:has(.db-filter-multiselect-dropdown.open) {
+      z-index: 1000000 !important;
     }
     .db-item-box:hover {
       box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
@@ -4121,34 +4728,249 @@ ${expectedOutput}
     }
     .db-filter-multiselect-btn:hover { border-color: #94a3b8; }
     .db-filter-multiselect-dropdown {
-      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
-      min-width: 220px; background: #ffffff; border: 1px solid #cbd5e1;
-      border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 4px 10px -2px rgba(0, 0, 0, 0.1);
-      z-index: 1000; padding: 8px; display: none;
+      position: absolute; top: calc(100% + 4px); left: 0;
+      min-width: 230px; width: 100%; max-width: 360px;
+      background: #ffffff; border: 1px solid #cbd5e1;
+      border-radius: 8px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.1);
+      z-index: 999999 !important; padding: 8px; display: none; box-sizing: border-box;
     }
     .db-filter-multiselect-dropdown.open {
-      display: flex; flex-direction: column; gap: 6px;
+      display: flex !important; flex-direction: column !important; gap: 6px !important;
+      height: 250px !important; box-sizing: border-box !important;
     }
     .db-filter-multiselect-search {
-      width: 100%; border: 1px solid #cbd5e1; border-radius: 4px;
-      padding: 4px 6px; font-size: 11px; outline: none;
+      width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px;
+      padding: 5px 8px; font-size: 11.5px; outline: none; flex-shrink: 0;
     }
     .db-filter-multiselect-actions {
-      display: flex; justify-content: space-between; gap: 4px; font-size: 10px;
+      display: flex; justify-content: space-between; gap: 6px; font-size: 10.5px; flex-shrink: 0; padding: 2px 0;
     }
     .db-filter-ms-action-btn {
-      background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px;
-      padding: 3px 6px; font-size: 10.5px; cursor: pointer; color: #334155; font-weight: 600;
+      flex: 1; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px;
+      padding: 3px 6px; font-size: 10.5px; cursor: pointer; color: #334155; font-weight: 600; text-align: center;
+      transition: all 0.15s;
     }
     .db-filter-ms-action-btn:hover { background: #e2e8f0; color: #0f172a; }
     .db-filter-multiselect-list {
-      max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+      flex: 1 1 0% !important; min-height: 0 !important; max-height: none !important;
+      overflow-y: auto !important; overflow-x: hidden !important; display: flex !important; flex-direction: column !important;
+      gap: 2px !important; padding-right: 4px;
     }
     .db-filter-multiselect-item {
-      display: flex; align-items: center; gap: 6px; padding: 3px 6px;
-      border-radius: 4px; font-size: 11px; color: #1e293b; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+      border-radius: 4px; font-size: 11.5px; color: #1e293b; cursor: pointer; user-select: none; flex-shrink: 0;
     }
-    .db-filter-multiselect-item:hover { background: #f1f5f9; }
+    /* Sticky Top Filter Bar (Thanh Bộ Lọc Cố Định Trên Cùng) */
+    .db-top-filter-bar {
+      width: 100%;
+      margin: 0 0 16px 0;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-sizing: border-box;
+      overflow: visible !important;
+    }
+    .db-top-filter-bar.is-sticky {
+      position: relative;
+      z-index: 950;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+      border-color: #cbd5e1;
+    }
+    .db-top-filter-bar.is-pinned-floating {
+      margin-top: 0 !important;
+      z-index: 999990 !important;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+      border-color: #3b82f6 !important;
+      background: rgba(255, 255, 255, 0.98) !important;
+    }
+    .db-top-filter-bar.is-collapsed.collapse-style-circle {
+      width: 48px !important;
+      height: 48px !important;
+      min-width: 48px !important;
+      max-width: 48px !important;
+      padding: 0 !important;
+      border-radius: 50% !important;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      overflow: visible !important;
+    }
+    .db-top-filter-circle-btn {
+      display: none;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 2px solid #3b82f6;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(59, 130, 246, 0.2);
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: pointer;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+      user-select: none;
+      box-sizing: border-box;
+    }
+    .db-top-filter-bar.is-collapsed.collapse-style-circle .db-top-filter-circle-btn {
+      display: flex !important;
+    }
+    .db-top-filter-bar.is-collapsed.collapse-style-circle .db-top-filter-expanded-wrap {
+      display: none !important;
+    }
+    .db-top-filter-circle-btn:hover {
+      transform: scale(1.1);
+      box-shadow: 0 6px 22px rgba(59, 130, 246, 0.35);
+      border-color: #2563eb;
+    }
+    .db-top-filter-circle-btn:active {
+      transform: scale(0.95);
+    }
+    .db-filter-circle-icon {
+      font-size: 20px;
+      line-height: 1;
+    }
+    .db-filter-circle-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: #ef4444;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 4px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
+      border: 1.5px solid #ffffff;
+    }
+    .db-top-filter-bar:not(.is-collapsed) .db-top-filter-circle-btn,
+    .db-top-filter-bar:not(.collapse-style-circle) .db-top-filter-circle-btn {
+      display: none !important;
+    }
+    .db-top-filter-bar:has(.db-filter-multiselect-dropdown.open),
+    .db-top-filter-bar.dropdown-open {
+      z-index: 1000000 !important;
+    }
+    .db-top-filter-item-wrapper.dropdown-open,
+    .db-top-filter-item-wrapper:has(.db-filter-multiselect-dropdown.open) {
+      z-index: 999999 !important;
+    }
+    .db-top-filter-bar.is-movable {
+      position: absolute;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      z-index: 900;
+    }
+    .db-top-filter-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      border-radius: 12px 12px 0 0;
+      user-select: none;
+    }
+    .db-top-filter-bar.is-collapsed .db-top-filter-header {
+      border-bottom: none;
+      border-radius: 12px;
+    }
+    .db-top-filter-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .db-top-filter-icon {
+      font-size: 15px;
+    }
+    .db-top-filter-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: 0.3px;
+    }
+    .db-top-filter-count-badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: #e0f2fe;
+      color: #0284c7;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .db-top-filter-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .db-top-filter-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .db-top-filter-btn:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+      border-color: #94a3b8;
+    }
+    .db-top-filter-btn.primary {
+      background: var(--db-accent, #0284c7);
+      color: #ffffff;
+      border-color: transparent;
+    }
+    .db-top-filter-btn.primary:hover {
+      background: var(--db-accent-hover, #0369a1);
+    }
+    .db-top-filter-body {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      padding: 14px 16px;
+      background: #ffffff;
+      border-radius: 0 0 12px 12px;
+      transition: max-height 0.3s ease, opacity 0.25s ease, padding 0.3s ease;
+      overflow: visible;
+    }
+    .db-top-filter-bar.is-collapsed .db-top-filter-body {
+      display: none !important;
+    }
+    .db-top-filter-item-wrapper {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+    .db-top-filter-item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .db-top-filter-item-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1e293b;
+    }
   </style>
 </head>
 
@@ -4433,8 +5255,8 @@ ${expectedOutput}
       }
     };
 
-    const CONFIG = \${configJson};
-    let FILES = \${embeddedDataJson};
+    const CONFIG = ${configJson};
+    let FILES = ${embeddedDataJson};
 
     // Tự động giải nén cấu trúc Compact Matrix Data hoặc kích hoạt Parquet Virtual Array
     function uncompactSheet(sheetData) {
@@ -4464,7 +5286,19 @@ ${expectedOutput}
     }
 
     let activeTabId = CONFIG.activeTabId || (CONFIG.tabs && CONFIG.tabs[0] ? CONFIG.tabs[0].id : 'default');
-    const activeFilters = { ...(CONFIG.activeFilters || {}) };
+    const tabFilters = JSON.parse(JSON.stringify(CONFIG.tabFilters || {}));
+    let activeFilters = { ...((tabFilters && tabFilters[activeTabId]) || CONFIG.activeFilters || {}) };
+    let openDropdownFilterId = null;
+
+    function switchDashboardTab(targetTabId) {
+      if (!targetTabId || targetTabId === activeTabId) return;
+      tabFilters[activeTabId] = { ...activeFilters };
+      activeTabId = targetTabId;
+      activeFilters = { ...(tabFilters[targetTabId] || {}) };
+      openDropdownFilterId = null;
+      renderAllTabs();
+      renderCanvas();
+    }
 
     function escapeHtml(str) {
       if (str === null || str === undefined) return '';
@@ -4491,10 +5325,27 @@ ${expectedOutput}
         }
       }
       const s = String(val).trim();
-      const dmy = s.match(/^(\\d{1,2})[\\/\\-\\.](\\d{1,2})[\\/\\-\\.](\\d{4})/);
-      if (dmy) return new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10)).getTime();
+      if (!s) return null;
+
+      // YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD (ưu tiên chuẩn ISO trước)
       const ymd = s.match(/^(\\d{4})[\\/\\-\\.](\\d{1,2})[\\/\\-\\.](\\d{1,2})/);
-      if (ymd) return new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[1], 10)).getTime();
+      if (ymd) {
+        const year = parseInt(ymd[1], 10);
+        const month = parseInt(ymd[2], 10) - 1;
+        const day = parseInt(ymd[3], 10);
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) return d.getTime();
+      }
+
+      // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+      const dmy = s.match(/^(\\d{1,2})[\\/\\-\\.](\\d{1,2})[\\/\\-\\.](\\d{4})/);
+      if (dmy) {
+        const day = parseInt(dmy[1], 10);
+        const month = parseInt(dmy[2], 10) - 1;
+        const year = parseInt(dmy[3], 10);
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) return d.getTime();
+      }
 
       if (/^\\d{1,7}$/.test(s) || /^\\d{9,}$/.test(s)) return null;
 
@@ -4508,6 +5359,8 @@ ${expectedOutput}
 
     function formatDateToYMD(val) {
       if (!val) return '';
+      const s = String(val).trim();
+      if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return s;
       const ts = parseDateToTimestamp(val);
       if (!ts) return '';
       const d = new Date(ts);
@@ -4533,21 +5386,35 @@ ${expectedOutput}
       return checkedCount > 0 && (validDateCount / checkedCount) >= 0.6;
     }
 
-    function getData(sourceKey) {
+    function getData(sourceKey, fallbackCol = null) {
+      if (!sourceKey && fallbackCol) {
+        for (const f in FILES) {
+          for (const s in FILES[f]) {
+            const rows = FILES[f][s];
+            if (rows && rows.length > 0 && rows[0] && rows[0][fallbackCol] !== undefined) {
+              return rows;
+            }
+          }
+        }
+      }
       if (!sourceKey) {
         const firstFile = Object.keys(FILES)[0];
         if (!firstFile) return [];
         const firstSheet = Object.keys(FILES[firstFile])[0];
         return FILES[firstFile][firstSheet] || [];
       }
-      const parts = sourceKey.split('::');
+      const parts = String(sourceKey).split('::');
       const fileName = parts[0];
       const sheetName = parts[1];
-      if (FILES[fileName] && FILES[fileName][sheetName]) {
+      if (fileName && sheetName && FILES[fileName] && FILES[fileName][sheetName]) {
         return FILES[fileName][sheetName];
       }
+      if (FILES[fileName]) {
+        const firstS = Object.keys(FILES[fileName])[0];
+        if (firstS && FILES[fileName][firstS]) return FILES[fileName][firstS];
+      }
       for (const f in FILES) {
-        if (FILES[f][sheetName]) return FILES[f][sheetName];
+        if (FILES[f][sheetName || sourceKey]) return FILES[f][sheetName || sourceKey];
       }
       const firstF = Object.keys(FILES)[0];
       if (firstF) {
@@ -4557,15 +5424,17 @@ ${expectedOutput}
       return [];
     }
 
-    function getFilteredData(sourceKey, excludeCols = []) {
+    function getFilteredData(sourceKey, excludeCols = [], targetTabId = null) {
       let rows = getData(sourceKey);
       if (!rows || rows.length === 0) return [];
-      const filterKeys = Object.keys(activeFilters).filter(k => !excludeCols.includes(k));
+      const tabId = targetTabId || activeTabId || 'default';
+      const filters = tabId === activeTabId ? activeFilters : (tabFilters[tabId] || {});
+      const filterKeys = Object.keys(filters).filter(k => !excludeCols.includes(k));
       if (filterKeys.length === 0) return rows;
 
       return rows.filter(row => {
         for (const col of filterKeys) {
-          const filterVal = activeFilters[col];
+          const filterVal = filters[col];
           if (!filterVal || row[col] === undefined) continue;
 
           let op = '=';
@@ -4597,8 +5466,13 @@ ${expectedOutput}
             if (isDateFilter || op === 'date_range') {
               const cellTs = parseDateToTimestamp(cell);
               if (cellTs === null) return false;
-              const startTs = startDate ? parseDateToTimestamp(startDate) : (minVal ? parseDateToTimestamp(minVal) : null);
-              const endTs = endDate ? parseDateToTimestamp(endDate) : (maxVal ? parseDateToTimestamp(maxVal) : null);
+              let startTs = startDate ? parseDateToTimestamp(startDate) : (minVal ? parseDateToTimestamp(minVal) : null);
+              let endTs = endDate ? parseDateToTimestamp(endDate) : (maxVal ? parseDateToTimestamp(maxVal) : null);
+              if (startTs !== null && endTs !== null && startTs > endTs) {
+                const tmp = startTs;
+                startTs = endTs;
+                endTs = tmp;
+              }
               if (startTs !== null && cellTs < startTs) return false;
               if (endTs !== null && cellTs > endTs) return false;
               continue;
@@ -4610,16 +5484,29 @@ ${expectedOutput}
 
             const numCell = Number(cell);
             const hasNumCell = !isNaN(numCell);
-            const numMin = sMin !== '' ? Number(sMin) : null;
-            const numMax = sMax !== '' ? Number(sMax) : null;
+            let numMin = sMin !== '' ? Number(sMin) : null;
+            let numMax = sMax !== '' ? Number(sMax) : null;
+
+            if (numMin !== null && numMax !== null && !isNaN(numMin) && !isNaN(numMax) && numMin > numMax) {
+              const tmp = numMin;
+              numMin = numMax;
+              numMax = tmp;
+            }
 
             if (hasNumCell && ((numMin !== null && !isNaN(numMin)) || (numMax !== null && !isNaN(numMax)))) {
               if (numMin !== null && !isNaN(numMin) && numCell < numMin) return false;
               if (numMax !== null && !isNaN(numMax) && numCell > numMax) return false;
               continue;
             } else {
-              if (sMin !== '' && String(cell).toLowerCase() < sMin.toLowerCase()) return false;
-              if (sMax !== '' && String(cell).toLowerCase() > sMax.toLowerCase()) return false;
+              let strMin = sMin !== '' ? sMin.toLowerCase() : null;
+              let strMax = sMax !== '' ? sMax.toLowerCase() : null;
+              if (strMin && strMax && strMin > strMax) {
+                const tmp = strMin;
+                strMin = strMax;
+                strMax = tmp;
+              }
+              if (strMin !== null && String(cell).toLowerCase() < strMin) return false;
+              if (strMax !== null && String(cell).toLowerCase() > strMax) return false;
               continue;
             }
           }
@@ -4696,12 +5583,13 @@ ${expectedOutput}
       });
     }
 
-    function getFilteredFilesObject() {
+    function getFilteredFilesObject(targetTabId = null) {
       const filtered = {};
+      const tabId = targetTabId || activeTabId || 'default';
       for (const f in FILES) {
         filtered[f] = {};
         for (const s in FILES[f]) {
-          filtered[f][s] = getFilteredData(f + '::' + s);
+          filtered[f][s] = getFilteredData(f + '::' + s, [], tabId);
         }
       }
       return filtered;
@@ -4741,16 +5629,42 @@ ${expectedOutput}
       return option;
     }
 
-    function evaluateEChartsCode(code, optionalData = null, context = {}) {
+    function enhanceInteractiveGraphic(option) {
+      if (!option || typeof option !== 'object' || !option.graphic) return option;
+      const processItem = (g) => {
+        if (!g || typeof g !== 'object') return;
+        const hasInteraction = typeof g.onclick === 'function' || typeof g.onmouseover === 'function' || typeof g.onmousedown === 'function';
+        if (hasInteraction) {
+          if (g.cursor === undefined) g.cursor = 'pointer';
+          if (!g.style) g.style = {};
+          if (g.style.cursor === undefined) g.style.cursor = 'pointer';
+          if (g.z === undefined) g.z = 100;
+          if (g.silent === true) g.silent = false;
+        }
+        if (Array.isArray(g.children)) {
+          g.children.forEach(processItem);
+        }
+      };
+
+      if (Array.isArray(option.graphic)) {
+        option.graphic.forEach(processItem);
+      } else if (typeof option.graphic === 'object') {
+        processItem(option.graphic);
+      }
+      return option;
+    }
+
+    function evaluateEChartsCode(code, optionalData = null, context = {}, chartInstance = null) {
       if (!code || !code.trim()) {
         return { option: {}, error: 'Chưa có code JavaScript cấu hình.' };
       }
       try {
+        const itemTabId = context.tabId || activeTabId || 'default';
         const allFiles = FILES;
-        const filteredFiles = getFilteredFilesObject();
+        const filteredFiles = getFilteredFilesObject(itemTabId);
         let defaultData = optionalData;
         if (defaultData === null || defaultData === undefined) {
-          defaultData = getFilteredData();
+          defaultData = getFilteredData(null, [], itemTabId);
         }
         const getSheet = (sheetName, fileName = null) => {
           if (fileName && filteredFiles[fileName] && filteredFiles[fileName][sheetName]) {
@@ -4773,30 +5687,62 @@ ${expectedOutput}
         const getFile = (fileName) => {
           return filteredFiles[fileName] || null;
         };
-        const safeContext = {
-          setFilter: (col, val) => {
-            if (val === undefined || val === null || val === '' || val === 'all') {
-              delete activeFilters[col];
-            } else {
-              activeFilters[col] = val;
-            }
+
+        const setFilter = (col, val) => {
+          if (!col) return;
+          if (!tabFilters[itemTabId]) tabFilters[itemTabId] = {};
+          if (val === undefined || val === null || val === '' || val === 'all') {
+            delete tabFilters[itemTabId][col];
+            if (itemTabId === activeTabId) delete activeFilters[col];
+          } else {
+            tabFilters[itemTabId][col] = val;
+            if (itemTabId === activeTabId) activeFilters[col] = val;
+          }
+          renderCanvas();
+        };
+
+        const resetFilter = (col = null) => {
+          if (col) {
+            setFilter(col, null);
+          } else {
+            tabFilters[itemTabId] = {};
+            if (itemTabId === activeTabId) activeFilters = {};
             renderCanvas();
-          },
-          activeFilters,
+          }
+        };
+
+        const targetFilters = itemTabId === activeTabId ? activeFilters : (tabFilters[itemTabId] || {});
+        const safeContext = {
+          setFilter,
+          resetFilter,
+          activeFilters: targetFilters,
           rawFiles: allFiles,
           getRawSheet,
+          tabId: itemTabId,
+          myChart: chartInstance,
+          chart: chartInstance,
           ...context
         };
 
-        const evalFunc = new Function('data', 'files', 'getSheet', 'getFile', 'context', 'echarts', 'XLSX', 'console', 'try { ' + code + ' } catch (e) { return { __error: e.stack || e.message }; }');
+        const evalFunc = new Function(
+          'data', 'files', 'getSheet', 'getFile', 'context', 'echarts', 'XLSX', 'console', 'myChart', 'chart', 'setFilter', 'resetFilter',
+          'let option = null; try { ' + code + ' } catch (e) { return { __error: e.stack || e.message }; } if (typeof option === "object" && option !== null) return option;'
+        );
 
-        const result = evalFunc(defaultData, filteredFiles, getSheet, getFile, safeContext, window.echarts, window.XLSX, window.console);
+        let result = evalFunc(defaultData, filteredFiles, getSheet, getFile, safeContext, window.echarts, window.XLSX, window.console, chartInstance, chartInstance, setFilter, resetFilter);
         if (result && result.__error) {
           return { option: {}, error: result.__error };
         }
-        if (!result || typeof result !== 'object') {
-          return { option: {}, error: 'Code phải return về một object option ECharts' };
+        if ((!result || typeof result !== 'object') && chartInstance && chartInstance.getOption) {
+          const curOpt = chartInstance.getOption();
+          if (curOpt && Object.keys(curOpt).length > 0) {
+            result = curOpt;
+          }
         }
+        if (!result || typeof result !== 'object') {
+          return { option: {}, error: 'Code phải return về một object option ECharts hoặc gán myChart.setOption(option);' };
+        }
+        enhanceInteractiveGraphic(result);
         const optimizedOption = optimizeChartOptionForLargeData(result);
         return { option: optimizedOption, error: null };
       } catch (err) {
@@ -4827,9 +5773,7 @@ ${expectedOutput}
         pill.innerHTML = inner;
 
         pill.addEventListener('click', () => {
-          activeTabId = tab.id;
-          renderAllTabs();
-          renderCanvas();
+          switchDashboardTab(tab.id);
         });
         tabsList.appendChild(pill);
       });
@@ -4850,9 +5794,95 @@ ${expectedOutput}
       canvas.appendChild(rightGuide);
 
       const currentTabItems = (CONFIG.items || []).filter(i => i.tabId === activeTabId);
+      const pinnedFilterItems = currentTabItems.filter(i => i.type === 'filter' && (i.isPinnedTop || i.container === 'sticky_top'));
+      const freeCanvasItems = currentTabItems.filter(i => !(i.type === 'filter' && (i.isPinnedTop || i.container === 'sticky_top')));
+
+      const barConfig = (CONFIG.topFilterBarConfig && CONFIG.topFilterBarConfig[activeTabId]) || {
+        enabled: false,
+        isSticky: true,
+        isCollapsed: false,
+        title: 'BỘ LỌC TỔNG HỢP',
+        pos: { x: 24, y: 24, w: 1312 }
+      };
+
+      // 1. Render Thanh Bộ Lọc Tổng Hợp (nếu có bộ lọc được ghim)
+      if (pinnedFilterItems.length > 0) {
+        const topBarEl = document.createElement('div');
+        const isCollapsed = Boolean(barConfig.isCollapsed);
+        const collapseStyle = barConfig.collapseStyle || 'circle';
+        const isCircle = collapseStyle === 'circle';
+        topBarEl.id = 'dbTopFilterBar';
+
+        topBarEl.className = 'db-top-filter-bar is-movable ' + (isCollapsed ? 'is-collapsed ' : '') + (isCircle ? 'collapse-style-circle' : 'collapse-style-bar');
+        topBarEl.style.position = 'absolute';
+        topBarEl.style.left = (barConfig.pos?.x || 24) + 'px';
+        topBarEl.style.top = (barConfig.pos?.y || 24) + 'px';
+        topBarEl.style.width = isCollapsed && isCircle ? '48px' : ((barConfig.pos?.w || 1312) + 'px');
+        topBarEl.style.zIndex = '900';
+
+        const countLabel = pinnedFilterItems.length + ' bộ lọc';
+        topBarEl.innerHTML = '<div class="db-top-filter-circle-btn" id="btnTopFilterCircleOpen" title="🔍 Mở Bộ Lọc Tổng Hợp (' + countLabel + ')">' +
+            '<span class="db-filter-circle-icon">🔍</span>' +
+            '<span class="db-filter-circle-badge">' + pinnedFilterItems.length + '</span>' +
+          '</div>' +
+          '<div class="db-top-filter-expanded-wrap">' +
+            '<div class="db-top-filter-header">' +
+              '<div class="db-top-filter-title-group">' +
+                '<span class="db-top-filter-icon">🔍</span>' +
+                '<span class="db-top-filter-title">' + escapeHtml(barConfig.title || 'BỘ LỌC TỔNG HỢP') + '</span>' +
+                '<span class="db-top-filter-count-badge">📌 ' + countLabel + '</span>' +
+              '</div>' +
+              '<div class="db-top-filter-actions">' +
+                '<button type="button" class="db-top-filter-btn primary" id="btnToggleCollapseTopBar" title="Mở rộng hoặc Thu gọn">' +
+                  (isCircle ? '▲ Thu Gọn (Nút Tròn)' : (isCollapsed ? '▼ Mở Bộ Lọc' : '▲ Thu Gọn')) +
+                '</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="db-top-filter-body" id="dbTopFilterBody"></div>' +
+          '</div>';
+
+        const topBodyEl = topBarEl.querySelector('#dbTopFilterBody');
+
+        pinnedFilterItems.forEach(item => {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'db-top-filter-item-wrapper';
+          wrapper.id = 'pinned_item_' + item.id;
+          wrapper.innerHTML = '<div class="db-top-filter-item-header">' +
+            '<span class="db-top-filter-item-title">' + escapeHtml(item.name || item.filterColumn) + '</span>' +
+          '</div>' +
+          '<div class="db-item-body" id="item_body_' + item.id + '"></div>';
+          topBodyEl.appendChild(wrapper);
+        });
+
+        canvas.appendChild(topBarEl);
+
+        topBarEl.dataset.origTop = topBarEl.offsetTop;
+
+        pinnedFilterItems.forEach(item => {
+          renderItemContent(item);
+        });
+
+        topBarEl.querySelector('#btnTopFilterCircleOpen')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          barConfig.isCollapsed = false;
+          topBarEl.classList.remove('is-collapsed');
+          topBarEl.style.width = (barConfig.pos?.w || 1312) + 'px';
+        });
+
+        topBarEl.querySelector('#btnToggleCollapseTopBar')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          barConfig.isCollapsed = !barConfig.isCollapsed;
+          topBarEl.classList.toggle('is-collapsed', barConfig.isCollapsed);
+          if (isCircle) {
+            topBarEl.style.width = barConfig.isCollapsed ? '48px' : ((barConfig.pos?.w || 1312) + 'px');
+          }
+          const btn = topBarEl.querySelector('#btnToggleCollapseTopBar');
+          if (btn) btn.textContent = isCircle ? '▲ Thu Gọn (Nút Tròn)' : (barConfig.isCollapsed ? '▼ Mở Bộ Lọc' : '▲ Thu Gọn');
+        });
+      }
 
       let maxBottom = 800;
-      currentTabItems.forEach(item => {
+      freeCanvasItems.forEach(item => {
         const b = (item.pos?.y || 0) + (item.pos?.h || 0);
         if (b > maxBottom) maxBottom = b;
       });
@@ -4860,7 +5890,7 @@ ${expectedOutput}
       canvas.style.minHeight = finalH + 'px';
       canvas.dataset.originalHeight = finalH;
 
-      currentTabItems.forEach(item => {
+      freeCanvasItems.forEach(item => {
         const el = document.createElement('div');
         const isHideHeader = Boolean(item.hideHeader);
         const isFramelessType = ['shape', 'heading', 'text', 'image'].includes(item.type);
@@ -4909,12 +5939,13 @@ ${expectedOutput}
           if (chart) chart.dispose();
           chart = echarts.init(chartDiv, null);
 
-          const data = getFilteredData(item.dataSourceKey);
-          const { option, error } = evaluateEChartsCode(item.code, data);
+          const itemTabId = item.tabId || activeTabId || 'default';
+          const data = getFilteredData(item.dataSourceKey, [], itemTabId);
+          const { option, error } = evaluateEChartsCode(item.code, data, { tabId: itemTabId }, chart);
 
           if (error) {
             chartDiv.innerHTML = '<div class="db-chart-error-banner">⚠️ Lỗi render ECharts:<br/>' + escapeHtml(error) + '</div>';
-          } else if (option) {
+          } else if (option && Object.keys(option).length > 0) {
             chart.setOption(option, true);
           }
         }, 30);
@@ -4972,7 +6003,8 @@ ${expectedOutput}
 
         body.innerHTML = '<div style="height:100%;width:100%;display:flex;align-items:center;padding:4px;overflow:hidden;"><h2 style="margin:0;width:100%;font-family:' + fFamily + ';font-size:' + fSize + ';font-weight:' + fWeight + ';font-style:' + fStyle + ';text-decoration:' + tDeco + ';color:' + tColor + ';text-align:' + tAlign + ';word-break:break-word;line-height:1.3;">' + escapeHtml(textVal) + '</h2></div>';
       } else if (item.type === 'kpi') {
-        const data = getFilteredData(item.dataSourceKey);
+        const itemTabId = item.tabId || activeTabId || 'default';
+        const data = getFilteredData(item.dataSourceKey, [], itemTabId);
         const numVals = data.map(r => Number(r[item.metricColumn])).filter(n => !isNaN(n));
         let sum = 0;
         if (item.aggregation === 'avg') {
@@ -4999,9 +6031,7 @@ ${expectedOutput}
           if (item.btnAction === 'url' && item.btnTarget) {
             window.open(item.btnTarget, '_blank');
           } else if (item.btnAction === 'tab' && item.btnTarget) {
-            activeTabId = item.btnTarget;
-            renderAllTabs();
-            renderCanvas();
+            switchDashboardTab(item.btnTarget);
           }
         });
         body.appendChild(btnEl);
@@ -5019,8 +6049,21 @@ ${expectedOutput}
       } else if (item.type === 'image') {
         body.innerHTML = '<div class="db-image-widget"><img src="' + (item.imageUrl || '') + '" alt="' + escapeHtml(item.name || 'Ảnh') + '" style="border-radius:' + (item.borderRadius || 6) + 'px;object-fit:' + (item.fit || 'contain') + ';" /></div>';
       } else if (item.type === 'filter') {
+        const itemTabId = item.tabId || activeTabId || 'default';
         const col = item.filterColumn;
-        const allRows = getData(item.dataSourceKey);
+        if (!item.dataSourceKey && col) {
+          for (const f in FILES) {
+            for (const s in FILES[f]) {
+              const r = FILES[f][s];
+              if (r && r.length > 0 && r[0] && r[0][col] !== undefined) {
+                item.dataSourceKey = f + '::' + s;
+                break;
+              }
+            }
+            if (item.dataSourceKey) break;
+          }
+        }
+        const allRows = getData(item.dataSourceKey, col);
         const isDateCol = isProbableDateColumn(col, allRows);
 
         let fType = item.filterType;
@@ -5038,14 +6081,27 @@ ${expectedOutput}
           parentItem = (CONFIG.items || []).find(i => i.id === item.parentFilterId);
         }
 
-        const availableRows = getFilteredData(item.dataSourceKey, [col]);
-        const uniqueVals = Array.from(new Set(availableRows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== ''))).sort((a, b) => {
-          const na = Number(a), nb = Number(b);
-          if (!isNaN(na) && !isNaN(nb)) return na - nb;
-          return String(a).localeCompare(String(b));
-        });
+        if (!tabFilters[itemTabId]) tabFilters[itemTabId] = {};
+        const currentTabFilters = itemTabId === activeTabId ? activeFilters : (tabFilters[itemTabId] || {});
+        const filterState = currentTabFilters[col];
 
-        const filterState = activeFilters[col];
+        const setTabFilterState = (valObj, keepDropdownOpen = false) => {
+          if (!tabFilters[itemTabId]) tabFilters[itemTabId] = {};
+          if (valObj === undefined || valObj === null || valObj === '' || valObj === 'all') {
+            delete tabFilters[itemTabId][col];
+            if (itemTabId === activeTabId) delete activeFilters[col];
+          } else {
+            tabFilters[itemTabId][col] = valObj;
+            if (itemTabId === activeTabId) activeFilters[col] = valObj;
+          }
+          if (keepDropdownOpen) {
+            openDropdownFilterId = item.id;
+          } else {
+            openDropdownFilterId = null;
+          }
+          renderCanvas();
+        };
+
         let currentOp = item.operator;
         if (!currentOp) {
           if (fType === 'range') currentOp = 'between';
@@ -5071,15 +6127,37 @@ ${expectedOutput}
             maxVal = filterState.max !== undefined ? filterState.max : (filterState.end !== undefined ? filterState.end : '');
             startDate = filterState.start || filterState.min || '';
             endDate = filterState.end || filterState.max || '';
-            selectedValues = Array.isArray(filterState.values) ? filterState.values : (Array.isArray(filterState.val) ? filterState.val : null);
+            selectedValues = Array.isArray(filterState.values) ? filterState.values : (Array.isArray(filterState.val) ? filterState.val : (filterState.val && filterState.val !== 'all' ? [filterState.val] : []));
           } else {
             currentVal = filterState;
           }
         }
 
+        let filterSourceRows = allRows;
+        if (parentItem && parentItem.filterColumn) {
+          const parentCol = parentItem.filterColumn;
+          const parentVal = (tabFilters[itemTabId] || {})[parentCol] || activeFilters[parentCol];
+          if (parentVal) {
+            filterSourceRows = getFilteredData(item.dataSourceKey, Object.keys(activeFilters).filter(k => k !== parentCol), itemTabId);
+          }
+        }
+        const uniqueVals = Array.from(new Set((filterSourceRows || allRows).map(r => r[col]).filter(v => v !== null && v !== undefined && v !== ''))).sort((a, b) => {
+          const na = Number(a), nb = Number(b);
+          if (!isNaN(na) && !isNaN(nb)) return na - nb;
+          return String(a).localeCompare(String(b));
+        });
+
+        if (Array.isArray(selectedValues)) {
+          selectedValues.forEach(sv => {
+            if (sv !== null && sv !== undefined && sv !== '' && !uniqueVals.map(String).includes(String(sv))) {
+              uniqueVals.push(sv);
+            }
+          });
+        }
+
         if (fType === 'select' && currentVal !== 'all' && currentVal !== '' && typeof currentVal === 'string') {
           if (uniqueVals.length > 0 && !uniqueVals.some(v => String(v) === String(currentVal))) {
-            delete activeFilters[col];
+            setTabFilterState(null);
             currentVal = 'all';
           }
         }
@@ -5093,10 +6171,26 @@ ${expectedOutput}
         if (fType === 'range') {
           if (isDate) {
             isFiltering = Boolean(startDate || endDate);
-            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">📅 [' + (startDate || '...') + ' ➔ ' + (endDate || '...') + ']</span>';
+            let bStart = startDate;
+            let bEnd = endDate;
+            if (startDate && endDate) {
+              const sTs = parseDateToTimestamp(startDate);
+              const eTs = parseDateToTimestamp(endDate);
+              if (sTs !== null && eTs !== null && sTs > eTs) {
+                bStart = endDate;
+                bEnd = startDate;
+              }
+            }
+            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">📅 [' + (bStart || '...') + ' ➔ ' + (bEnd || '...') + ']</span>';
           } else {
             isFiltering = Boolean(minVal !== '' || maxVal !== '');
-            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">↔️ [' + (minVal !== '' ? minVal : '-∞') + ' ➔ ' + (maxVal !== '' ? maxVal : '+∞') + ']</span>';
+            let bMin = minVal;
+            let bMax = maxVal;
+            if (minVal !== '' && maxVal !== '' && !isNaN(Number(minVal)) && !isNaN(Number(maxVal)) && Number(minVal) > Number(maxVal)) {
+              bMin = maxVal;
+              bMax = minVal;
+            }
+            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">↔️ [' + (bMin !== '' ? bMin : '-∞') + ' ➔ ' + (bMax !== '' ? bMax : '+∞') + ']</span>';
           }
         } else if (fType === 'multiselect') {
           isFiltering = Boolean(selectedValues.length > 0 && selectedValues.length < uniqueVals.length);
@@ -5104,7 +6198,17 @@ ${expectedOutput}
         } else if (fType === 'date') {
           if (currentOp === 'date_range') {
             isFiltering = Boolean(startDate || endDate);
-            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">📅 [' + (startDate || '...') + ' ➔ ' + (endDate || '...') + ']</span>';
+            let bStart = startDate;
+            let bEnd = endDate;
+            if (startDate && endDate) {
+              const sTs = parseDateToTimestamp(startDate);
+              const eTs = parseDateToTimestamp(endDate);
+              if (sTs !== null && eTs !== null && sTs > eTs) {
+                bStart = endDate;
+                bEnd = startDate;
+              }
+            }
+            if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">📅 [' + (bStart || '...') + ' ➔ ' + (bEnd || '...') + ']</span>';
           } else {
             isFiltering = Boolean(currentVal !== 'all' && currentVal !== '');
             if (isFiltering) activeBadgeHtml = '<span class="db-filter-active-badge">📅 ' + currentOp + ' ' + escapeHtml(currentVal) + '</span>';
@@ -5214,8 +6318,7 @@ ${expectedOutput}
           const resetBtn = document.getElementById('filter_reset_' + item.id);
           resetBtn?.addEventListener('click', (e) => {
             e.stopPropagation();
-            delete activeFilters[col];
-            renderCanvas();
+            setTabFilterState(null);
           });
 
           if (fType === 'range') {
@@ -5225,9 +6328,8 @@ ${expectedOutput}
               const handleDateRange = () => {
                 const sVal = startInp ? startInp.value : '';
                 const eVal = endInp ? endInp.value : '';
-                if (!sVal && !eVal) delete activeFilters[col];
-                else activeFilters[col] = { op: 'date_range', start: sVal, end: eVal, isDate: true };
-                renderCanvas();
+                if (!sVal && !eVal) setTabFilterState(null);
+                else setTabFilterState({ op: 'date_range', start: sVal, end: eVal, isDate: true });
               };
               startInp?.addEventListener('change', handleDateRange);
               endInp?.addEventListener('change', handleDateRange);
@@ -5237,9 +6339,8 @@ ${expectedOutput}
               const handleRange = () => {
                 const minV = minInp ? minInp.value.trim() : '';
                 const maxV = maxInp ? maxInp.value.trim() : '';
-                if (minV === '' && maxV === '') delete activeFilters[col];
-                else activeFilters[col] = { op: 'between', min: minV, max: maxV, start: minV, end: maxV };
-                renderCanvas();
+                if (minV === '' && maxV === '') setTabFilterState(null);
+                else setTabFilterState({ op: 'between', min: minV, max: maxV, start: minV, end: maxV });
               };
               minInp?.addEventListener('change', handleRange);
               maxInp?.addEventListener('change', handleRange);
@@ -5253,9 +6354,8 @@ ${expectedOutput}
               const op = opSel ? opSel.value : '=';
               item.operator = op;
               const val = valEl ? valEl.value.trim() : '';
-              if (val === '' || val === 'all') delete activeFilters[col];
-              else activeFilters[col] = { op, val };
-              renderCanvas();
+              if (val === '' || val === 'all') setTabFilterState(null);
+              else setTabFilterState({ op, val });
             };
             opSel?.addEventListener('change', applyComp);
             valEl?.addEventListener('change', applyComp);
@@ -5274,12 +6374,51 @@ ${expectedOutput}
             const btnAll = document.getElementById('filter_ms_all_' + item.id);
             const btnNone = document.getElementById('filter_ms_none_' + item.id);
 
+            // Khôi phục trạng thái mở nếu trước đó dropdown này vừa được tương tác
+            if (openDropdownFilterId === item.id && drop) {
+              drop.classList.add('open');
+              const parentBox = drop.closest('.db-item-box');
+              if (parentBox) {
+                if (parentBox.dataset.originalZIndex === undefined) {
+                  parentBox.dataset.originalZIndex = parentBox.style.zIndex || '';
+                }
+                parentBox.classList.add('dropdown-open');
+                parentBox.style.zIndex = '999999';
+              }
+            }
+
             btn?.addEventListener('click', (e) => {
               e.stopPropagation();
               document.querySelectorAll('.db-filter-multiselect-dropdown.open').forEach(d => {
-                if (d !== drop) d.classList.remove('open');
+                if (d !== drop) {
+                  d.classList.remove('open');
+                  const pBox = d.closest('.db-item-box');
+                  if (pBox) {
+                    pBox.classList.remove('dropdown-open');
+                    if (pBox.dataset.originalZIndex !== undefined) {
+                      pBox.style.zIndex = pBox.dataset.originalZIndex;
+                    }
+                  }
+                }
               });
-              drop?.classList.toggle('open');
+              const isOpen = drop?.classList.toggle('open');
+              const parentBox = drop?.closest('.db-item-box');
+              if (parentBox) {
+                if (isOpen) {
+                  if (parentBox.dataset.originalZIndex === undefined) {
+                    parentBox.dataset.originalZIndex = parentBox.style.zIndex || '';
+                  }
+                  parentBox.classList.add('dropdown-open');
+                  parentBox.style.zIndex = '999999';
+                  openDropdownFilterId = item.id;
+                } else {
+                  parentBox.classList.remove('dropdown-open');
+                  if (parentBox.dataset.originalZIndex !== undefined) {
+                    parentBox.style.zIndex = parentBox.dataset.originalZIndex;
+                  }
+                  openDropdownFilterId = null;
+                }
+              }
               if (drop?.classList.contains('open')) searchInp?.focus();
             });
 
@@ -5295,14 +6434,13 @@ ${expectedOutput}
 
             const applyMultiSelect = () => {
               const checked = Array.from(document.querySelectorAll('.filter_ms_chk_' + item.id + ':checked')).map(c => c.value);
-              if (checked.length === 0 || checked.length === uniqueVals.length) delete activeFilters[col];
-              else activeFilters[col] = { op: 'in', values: checked, val: checked };
-              renderCanvas();
+              if (checked.length === 0 || checked.length === uniqueVals.length) setTabFilterState(null, true);
+              else setTabFilterState({ op: 'in', values: checked, val: checked }, true);
             };
 
             chks.forEach(c => c.addEventListener('change', applyMultiSelect));
-            btnAll?.addEventListener('click', () => { delete activeFilters[col]; renderCanvas(); });
-            btnNone?.addEventListener('click', () => { activeFilters[col] = { op: 'in', values: [], val: [] }; renderCanvas(); });
+            btnAll?.addEventListener('click', () => { setTabFilterState(null, true); });
+            btnNone?.addEventListener('click', () => { setTabFilterState({ op: 'in', values: [], val: [] }, true); });
           } else if (fType === 'text') {
             const opSel = document.getElementById('filter_op_' + item.id);
             const valEl = document.getElementById('filter_val_' + item.id);
@@ -5310,9 +6448,8 @@ ${expectedOutput}
               const op = opSel ? opSel.value : 'contains';
               item.operator = op;
               const val = valEl ? valEl.value.trim() : '';
-              if (val === '' || val === 'all') delete activeFilters[col];
-              else activeFilters[col] = { op, val };
-              renderCanvas();
+              if (val === '' || val === 'all') setTabFilterState(null);
+              else setTabFilterState({ op, val });
             };
             opSel?.addEventListener('change', applyText);
             valEl?.addEventListener('change', applyText);
@@ -5334,14 +6471,13 @@ ${expectedOutput}
               if (op === 'date_range') {
                 const sVal = startInp ? startInp.value : '';
                 const eVal = endInp ? endInp.value : '';
-                if (!sVal && !eVal) delete activeFilters[col];
-                else activeFilters[col] = { op: 'date_range', start: sVal, end: eVal, isDate: true };
+                if (!sVal && !eVal) setTabFilterState(null);
+                else setTabFilterState({ op: 'date_range', start: sVal, end: eVal, isDate: true });
               } else {
                 const dVal = singleInp ? singleInp.value : '';
-                if (!dVal) delete activeFilters[col];
-                else activeFilters[col] = { op, val: dVal, isDate: true };
+                if (!dVal) setTabFilterState(null);
+                else setTabFilterState({ op, val: dVal, isDate: true });
               }
-              renderCanvas();
             };
 
             startInp?.addEventListener('change', handleDateChange);
@@ -5355,9 +6491,8 @@ ${expectedOutput}
             const valSel = document.getElementById('filter_val_' + item.id);
             valSel?.addEventListener('change', (e) => {
               const v = e.target.value;
-              if (v === 'all') delete activeFilters[col];
-              else activeFilters[col] = { op: '=', val: v };
-              renderCanvas();
+              if (v === 'all') setTabFilterState(null);
+              else setTabFilterState({ op: '=', val: v });
             });
           }
         }, 0);
@@ -5425,14 +6560,97 @@ ${expectedOutput}
       reader.readAsArrayBuffer(file);
     });
 
-    window.addEventListener('resize', updateCanvasTransform);
-    window.addEventListener('click', () => {
-      document.querySelectorAll('.db-filter-multiselect-dropdown.open').forEach(d => d.classList.remove('open'));
+    function updateTopFilterBarStickyPosition() {
+      const topBar = document.getElementById('dbTopFilterBar');
+      if (!topBar) return;
+      const canvas = document.getElementById('dashboardCanvas');
+      if (!canvas) return;
+
+      const canvasRect = canvas.getBoundingClientRect();
+      const effectiveScale = canvas.offsetWidth > 0 ? (canvasRect.width / canvas.offsetWidth) : 1.0;
+      let initialLocalY = 24;
+      if (topBar.dataset.origTop !== undefined && topBar.dataset.origTop !== '') {
+        initialLocalY = parseFloat(topBar.dataset.origTop) || 24;
+      } else {
+        initialLocalY = topBar.offsetTop || 24;
+        topBar.dataset.origTop = initialLocalY;
+      }
+
+      const headerEl = document.querySelector('.db-header');
+      let headerBottom = 0;
+      if (headerEl && headerEl.offsetHeight > 0) {
+        const headerRect = headerEl.getBoundingClientRect();
+        if (headerRect.top <= 2 && headerRect.bottom > 0) {
+          headerBottom = headerRect.bottom;
+        }
+      }
+
+      const tabsBar = document.getElementById('dbTabsBar');
+      let tabsBottom = 0;
+      if (tabsBar && tabsBar.offsetHeight > 0) {
+        const tabsRect = tabsBar.getBoundingClientRect();
+        if (tabsRect.top <= headerBottom + 2 && tabsRect.bottom > headerBottom) {
+          tabsBottom = tabsRect.bottom;
+        }
+      }
+
+      const targetScreenY = Math.max(headerBottom, tabsBottom);
+      const naturalScreenY = canvasRect.top + (initialLocalY * effectiveScale);
+
+      if (naturalScreenY <= targetScreenY) {
+        const neededTranslateY = (targetScreenY - canvasRect.top) / effectiveScale - initialLocalY;
+        const maxTranslateY = Math.max(0, canvas.offsetHeight - topBar.offsetHeight - 20);
+        const finalY = Math.min(maxTranslateY, Math.max(0, neededTranslateY));
+        topBar.style.transform = 'translate3d(0, ' + finalY + 'px, 0)';
+        topBar.classList.add('is-pinned-floating');
+      } else {
+        topBar.style.transform = '';
+        topBar.classList.remove('is-pinned-floating');
+      }
+    }
+
+    let isTickingSticky = false;
+    const handleScrollSticky = () => {
+      if (!isTickingSticky) {
+        window.requestAnimationFrame(() => {
+          updateTopFilterBarStickyPosition();
+          isTickingSticky = false;
+        });
+        isTickingSticky = true;
+      }
+    };
+    window.addEventListener('scroll', handleScrollSticky, { passive: true });
+    document.addEventListener('scroll', handleScrollSticky, { passive: true });
+    const canvasWrapperEl = document.getElementById('canvasWrapper');
+    if (canvasWrapperEl) {
+      canvasWrapperEl.addEventListener('scroll', handleScrollSticky, { passive: true });
+    }
+
+    window.addEventListener('resize', () => {
+      updateCanvasTransform();
+      updateTopFilterBarStickyPosition();
+    });
+
+    window.addEventListener('click', (e) => {
+      if (!e.target.closest('.db-filter-multiselect-dropdown') && !e.target.closest('.db-filter-multiselect-btn')) {
+        openDropdownFilterId = null;
+        document.querySelectorAll('.db-filter-multiselect-dropdown.open').forEach(d => {
+          d.classList.remove('open');
+          const pBox = d.closest('.db-item-box') || d.closest('.db-top-filter-item-wrapper');
+          if (pBox) {
+            pBox.classList.remove('dropdown-open');
+            if (pBox.dataset.originalZIndex !== undefined) {
+              pBox.style.zIndex = pBox.dataset.originalZIndex;
+            }
+          }
+        });
+      }
     });
 
     // Initial render
     renderAllTabs();
     renderCanvas();
+    updateTopFilterBarStickyPosition();
   <\/script>
 </body>
 </html>`;
@@ -5494,7 +6712,13 @@ ${expectedOutput}
     DashboardState.present.theme.themeMode = 'light';
     const canvasWrap = document.getElementById('canvasWrapper');
     const matchedBg = (canvasWrap?.className.match(/canvas-bg-([a-zA-Z0-9_-]+)/) || [])[1];
-    DashboardState.present.theme.canvasBg = matchedBg || DashboardState.present.theme.canvasBg || 'dots';
+    const cachedBg = (typeof localStorage !== 'undefined' && localStorage.getItem('mb_dashboard_canvas_bg')) || null;
+    DashboardState.present.theme.canvasBg = matchedBg || DashboardState.present.theme.canvasBg || cachedBg || 'dots';
+    try {
+      if (typeof localStorage !== 'undefined' && DashboardState.present.theme.canvasBg) {
+        localStorage.setItem('mb_dashboard_canvas_bg', DashboardState.present.theme.canvasBg);
+      }
+    } catch (_) {}
 
     // 3. ĐẢM BẢO CẤU HÌNH THANH TAB (VỊ TRÍ 4 HƯỚNG, STYLES, MÀU SẮC, ĐỘ RỘNG...) ĐƯỢC LƯU TRỌN VẸN
     if (typeof TabBarManager !== 'undefined' && TabBarManager.getConfig) {
@@ -5510,6 +6734,10 @@ ${expectedOutput}
     }
 
     // 5. Trạng thái bộ lọc tương tác hiện tại
+    const curActiveTab = DashboardState.present.activeTabId || 'default';
+    if (!DashboardState.tabFilters) DashboardState.tabFilters = {};
+    DashboardState.tabFilters[curActiveTab] = JSON.parse(JSON.stringify(DashboardState.activeFilters || {}));
+    DashboardState.present.tabFilters = JSON.parse(JSON.stringify(DashboardState.tabFilters));
     DashboardState.present.activeFilters = { ...(DashboardState.activeFilters || {}) };
 
     // 6. Danh mục nguồn dữ liệu cần thiết
@@ -5995,7 +7223,7 @@ ${expectedOutput}
       description: 'Dashboard BI tùy biến bằng JavaScript ECharts và nguồn dữ liệu Excel',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      theme: { themeMode: document.documentElement.getAttribute('data-theme') || 'dark', canvasBg: 'default' },
+      theme: { themeMode: 'light', canvasBg: (typeof localStorage !== 'undefined' && localStorage.getItem('mb_dashboard_canvas_bg')) || 'dots' },
       tabs: [
         { id: 'tab_page_1', name: '📊 Trang 1' }
       ],
@@ -6013,61 +7241,68 @@ ${expectedOutput}
     const titleInput = document.getElementById('dashboardTitleInput');
     if (titleInput) titleInput.value = DashboardState.present.title;
 
+    applyCanvasBackgroundUI(DashboardState.present.theme.canvasBg);
     renderAllTabs();
     renderCanvas();
     showToast('Đã khởi tạo Dashboard mới! Hãy thêm biểu đồ hoặc widget để bắt đầu chỉnh sửa.', 'success');
   }
 
   async function parseExcelFileAsync(file) {
-    return new Promise((resolve, reject) => {
-      const isCsv = file.name.toLowerCase().endsWith('.csv');
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          let workbook;
-          if (isCsv) {
-            const csvText = e.target.result;
-            workbook = XLSX.read(csvText, { type: 'string', raw: false });
-          } else {
-            const data = new Uint8Array(e.target.result);
-            workbook = XLSX.read(data, { type: 'array' });
-          }
+    const isCsv = file.name.toLowerCase().endsWith('.csv');
+    const isLargeFile = file.size >= PARQUET_THRESHOLD_BYTES;
+    const sizeStr = file.size > 1048576 
+      ? (file.size / 1048576).toFixed(1) + ' MB' 
+      : Math.max(1, Math.round(file.size / 1024)) + ' KB';
 
-          const isLargeFile = file.size >= PARQUET_THRESHOLD_BYTES;
-          sheetNames.forEach(sName => {
-            const worksheet = workbook.Sheets[sName];
-            const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-            if (isLargeFile && rows.length > 500) {
-              const parquetTable = ParquetEngine.encodeToParquet(rows, { fileName: file.name, sheetName: sName });
-              sheetsData[sName] = ParquetEngine.createVirtualArray(parquetTable);
-            } else {
-              sheetsData[sName] = rows;
-            }
-          });
-
-          const sizeStr = file.size > 1048576 
-            ? (file.size / 1048576).toFixed(1) + ' MB' 
-            : Math.max(1, Math.round(file.size / 1024)) + ' KB';
-
-          resolve({
-            name: file.name,
-            sizeStr: isLargeFile ? `${sizeStr} (📦 Parquet)` : sizeStr,
-            uploadedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-            sheets: sheetsData,
-            isParquet: isLargeFile,
-            rawBytes: isCsv || isLargeFile ? null : e.target.result
-          });
-        } catch (err) {
-          reject(err);
-        }
+    if (isCsv) {
+      // Dùng Fast Streaming CSV Parser: Đọc trực tiếp thành Columnar Table không qua SheetJS
+      const parquetTable = await FastCsvParser.parse(file);
+      const sName = file.name.replace(/\.[^/.]+$/, '');
+      const sheetsData = {
+        [sName]: ParquetEngine.createVirtualArray(parquetTable)
       };
-      reader.onerror = () => reject(new Error(`Không thể đọc file "${file.name}"`));
-      if (isCsv) {
-        reader.readAsText(file, 'utf-8');
-      } else {
-        reader.readAsArrayBuffer(file);
-      }
-    });
+
+      return {
+        name: file.name,
+        sizeStr: isLargeFile ? `${sizeStr} (📦 Parquet)` : sizeStr,
+        uploadedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        sheets: sheetsData,
+        isParquet: isLargeFile,
+        rawBytes: null
+      };
+    } else {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(arrayBuffer), {
+        type: 'array',
+        dense: true,
+        cellFormula: false,
+        cellHTML: false,
+        cellText: false
+      });
+      const sheetsData = {};
+      const sheetNames = workbook.SheetNames || [];
+
+      sheetNames.forEach(sName => {
+        const worksheet = workbook.Sheets[sName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+        delete workbook.Sheets[sName]; // Giải phóng ngay sheet khỏi bộ nhớ
+        if (isLargeFile && rows.length > 500) {
+          const parquetTable = ParquetEngine.encodeToParquet(rows, { fileName: file.name, sheetName: sName });
+          sheetsData[sName] = ParquetEngine.createVirtualArray(parquetTable);
+        } else {
+          sheetsData[sName] = rows;
+        }
+      });
+
+      return {
+        name: file.name,
+        sizeStr: isLargeFile ? `${sizeStr} (📦 Parquet)` : sizeStr,
+        uploadedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        sheets: sheetsData,
+        isParquet: isLargeFile,
+        rawBytes: null
+      };
+    }
   }
 
   // ===========================================================================
@@ -6244,9 +7479,15 @@ ${expectedOutput}
     DashboardState.present = config;
     DashboardState.isDirty = false;
     DashboardState.selectedItemId = null;
+    DashboardState.tabFilters = (config.tabFilters && typeof config.tabFilters === 'object')
+      ? JSON.parse(JSON.stringify(config.tabFilters))
+      : {};
     DashboardState.activeFilters = (config.activeFilters && typeof config.activeFilters === 'object')
       ? JSON.parse(JSON.stringify(config.activeFilters))
       : {};
+    if (config.activeTabId && DashboardState.tabFilters[config.activeTabId]) {
+      DashboardState.activeFilters = JSON.parse(JSON.stringify(DashboardState.tabFilters[config.activeTabId]));
+    }
     DashboardState.updateUI();
 
     // 4. Đồng bộ tiêu đề trên thanh Header
@@ -6256,8 +7497,9 @@ ${expectedOutput}
     }
 
     // 5. Cập nhật Background Canvas nếu có
-    if (config.theme?.canvasBg && typeof applyCanvasBackgroundUI === 'function') {
-      applyCanvasBackgroundUI(config.theme.canvasBg);
+    const bgToApply = config.theme?.canvasBg || config.canvasBg || (typeof localStorage !== 'undefined' && localStorage.getItem('mb_dashboard_canvas_bg')) || 'dots';
+    if (typeof applyCanvasBackgroundUI === 'function') {
+      applyCanvasBackgroundUI(bgToApply);
     }
 
     // 6. Đồng bộ toàn bộ giao diện, Tab bar, Canvas và Quản lý dữ liệu
@@ -6660,30 +7902,42 @@ ${expectedOutput}
     let processed = 0;
     let newlyAddedFirstKey = null;
 
-    filesArray.forEach(file => {
+    filesArray.forEach(async (file) => {
       const isCsv = file.name.toLowerCase().endsWith('.csv');
-      const reader = new FileReader();
+      const isLargeFile = file.size >= PARQUET_THRESHOLD_BYTES;
+      const sizeStr = file.size > 1048576 
+        ? (file.size / 1048576).toFixed(1) + ' MB' 
+        : Math.max(1, Math.round(file.size / 1024)) + ' KB';
 
-      reader.onload = (e) => {
-        try {
-          let workbook;
-          if (isCsv) {
-            // Đọc CSV trực tiếp bằng text để bảo đảm không bị lỗi ký tự Unicode tiếng Việt
-            const csvText = e.target.result;
-            workbook = XLSX.read(csvText, { type: 'string', raw: false });
-          } else {
-            // Đọc Excel qua mảng byte nhị phân
-            const data = new Uint8Array(e.target.result);
-            workbook = XLSX.read(data, { type: 'array' });
+      try {
+        const sheetsData = {};
+        let sheetNames = [];
+
+        if (isCsv) {
+          // Sử dụng Fast Streaming CSV Parser: Đọc trực tiếp thành Columnar Table, không qua SheetJS, tiết kiệm 95% RAM
+          const parquetTable = await FastCsvParser.parse(file);
+          const sName = file.name.replace(/\.[^/.]+$/, '');
+          sheetsData[sName] = ParquetEngine.createVirtualArray(parquetTable);
+          sheetNames = [sName];
+          if (isLargeFile) {
+            showToast(`📦 File CSV lớn "${file.name}" (${sizeStr}): Đã kích hoạt Streaming Columnar Parser siêu nhẹ.`, 'info', 5000);
           }
-
-          const isLargeFile = file.size >= PARQUET_THRESHOLD_BYTES;
-          const sheetsData = {};
-          const sheetNames = workbook.SheetNames || [];
+        } else {
+          // File Excel XLSX / XLS: Tối ưu với dense: true và giải phóng bộ nhớ từng sheet
+          const arrayBuffer = await file.arrayBuffer();
+          const workbook = XLSX.read(new Uint8Array(arrayBuffer), {
+            type: 'array',
+            dense: true,
+            cellFormula: false,
+            cellHTML: false,
+            cellText: false
+          });
+          sheetNames = workbook.SheetNames || [];
 
           sheetNames.forEach(sName => {
             const worksheet = workbook.Sheets[sName];
             const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+            delete workbook.Sheets[sName]; // Giải phóng ngay sheet khỏi bộ nhớ
             if (isLargeFile && rows.length > 500) {
               const parquetTable = ParquetEngine.encodeToParquet(rows, { fileName: file.name, sheetName: sName });
               sheetsData[sName] = ParquetEngine.createVirtualArray(parquetTable);
@@ -6692,31 +7946,31 @@ ${expectedOutput}
             }
           });
 
-          // Định dạng dung lượng dễ đọc
-          const sizeStr = file.size > 1048576 
-            ? (file.size / 1048576).toFixed(1) + ' MB' 
-            : Math.max(1, Math.round(file.size / 1024)) + ' KB';
-
           if (isLargeFile) {
-            showToast(`📦 File lớn "${file.name}" (${sizeStr} >= 50MB): Đã tự động kích hoạt nén Parquet Columnar để tiết kiệm RAM trình duyệt. Mọi thao tác hoạt động như bình thường!`, 'info', 6000);
+            showToast(`📦 File Excel lớn "${file.name}" (${sizeStr}): Đã tối ưu hóa bộ nhớ và nén Columnar thành công!`, 'info', 5000);
           }
+        }
 
-          // Lưu trữ dữ liệu vào DataStore
-          DataStore.files[file.name] = {
-            name: file.name,
-            sizeStr: isLargeFile ? `${sizeStr} (📦 Parquet)` : sizeStr,
-            uploadedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-            sheets: sheetsData,
-            isParquet: isLargeFile,
-            rawBytes: isCsv || isLargeFile ? null : e.target.result
-          };
+        // Lưu trữ dữ liệu vào DataStore (giải phóng rawBytes nhị phân cho các file >= 5MB)
+        DataStore.files[file.name] = {
+          name: file.name,
+          sizeStr: isLargeFile ? `${sizeStr} (📦 Parquet)` : sizeStr,
+          uploadedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          sheets: sheetsData,
+          isParquet: isLargeFile,
+          rawBytes: file.size < 5 * 1024 * 1024 && !isCsv ? null : null
+        };
 
-          if (!newlyAddedFirstKey && sheetNames.length > 0) {
-            newlyAddedFirstKey = `${file.name}::${sheetNames[0]}`;
-          }
+        if (!newlyAddedFirstKey && sheetNames.length > 0) {
+          newlyAddedFirstKey = `${file.name}::${sheetNames[0]}`;
+        }
+      } catch (err) {
+        console.error('Lỗi phân tích file:', file.name, err);
+        showToast(`Lỗi phân tích file "${file.name}": ${err.message}`, 'error');
+      }
 
-          processed++;
-          if (processed === filesArray.length) {
+      processed++;
+      if (processed === filesArray.length) {
             // Nếu đây là lần nạp file thật đầu tiên, gỡ bỏ file demo mẫu để ưu tiên dữ liệu thật
             if (DataStore.files['Du_Lieu_Mau_Kinh_Doanh.xlsx'] && Object.keys(DataStore.files).length > 1) {
               delete DataStore.files['Du_Lieu_Mau_Kinh_Doanh.xlsx'];
@@ -6739,16 +7993,6 @@ ${expectedOutput}
             openExcelManagerModal();
             showToast(`✓ Đã nạp thành công ${filesArray.length} file nguồn dữ liệu!`, 'success');
           }
-        } catch (err) {
-          showToast(`Lỗi phân tích file ${file.name}: ${err.message}`, 'error');
-        }
-      };
-
-      if (isCsv) {
-        reader.readAsText(file, 'utf-8');
-      } else {
-        reader.readAsArrayBuffer(file);
-      }
     });
   }
 
@@ -7093,6 +8337,10 @@ ${expectedOutput}
       canvas.style.transform = 'none';
       canvas.style.transformOrigin = 'top center';
       canvas.style.marginBottom = '0px';
+    }
+
+    if (typeof updateTopFilterBarStickyPosition === 'function') {
+      updateTopFilterBarStickyPosition();
     }
   }
 
@@ -7571,6 +8819,35 @@ ${expectedOutput}
     }
   };
 
+  function switchDashboardTab(targetTabId) {
+    if (!targetTabId) return;
+    const currentTab = DashboardState.present.activeTabId;
+    if (currentTab === targetTabId) return;
+
+    syncItemPositionsFromDOM();
+
+    // 1. Lưu bộ lọc của Tab hiện tại
+    if (!DashboardState.tabFilters) DashboardState.tabFilters = {};
+    if (currentTab) {
+      DashboardState.tabFilters[currentTab] = JSON.parse(JSON.stringify(DashboardState.activeFilters || {}));
+    }
+
+    // 2. Chuyển sang Tab đích
+    DashboardState.present.activeTabId = targetTabId;
+
+    // 3. Khôi phục bộ lọc độc lập của Tab đích
+    DashboardState.activeFilters = JSON.parse(JSON.stringify((DashboardState.tabFilters && DashboardState.tabFilters[targetTabId]) || {}));
+
+    // 4. Đồng bộ vào present để undo/redo và xuất JSON trọn vẹn
+    DashboardState.present.tabFilters = JSON.parse(JSON.stringify(DashboardState.tabFilters));
+    DashboardState.present.activeFilters = JSON.parse(JSON.stringify(DashboardState.activeFilters));
+
+    // 5. Cập nhật UI
+    renderAllTabs();
+    renderCanvas();
+    triggerDebouncedAutoSave();
+  }
+
   function renderAllTabs() {
     const tabsList = document.getElementById('dbTabsList');
     if (!tabsList) return;
@@ -7605,20 +8882,15 @@ ${expectedOutput}
             DashboardState.pushSnapshot();
             DashboardState.present.tabs = DashboardState.present.tabs.filter(t => t.id !== tab.id);
             DashboardState.present.items = DashboardState.present.items.filter(i => i.tabId !== tab.id);
-            DashboardState.present.activeTabId = DashboardState.present.tabs[0].id;
+            if (DashboardState.tabFilters) delete DashboardState.tabFilters[tab.id];
+            const nextTabId = DashboardState.present.tabs[0]?.id;
+            switchDashboardTab(nextTabId);
             DashboardState.isDirty = true;
-            renderAllTabs();
-            renderCanvas();
-            triggerDebouncedAutoSave();
           }
           return;
         }
         if (DashboardState.present.activeTabId !== tab.id) {
-          syncItemPositionsFromDOM();
-          DashboardState.present.activeTabId = tab.id;
-          renderAllTabs();
-          renderCanvas();
-          triggerDebouncedAutoSave();
+          switchDashboardTab(tab.id);
         }
       });
 
@@ -8101,18 +9373,34 @@ ${expectedOutput}
       });
 
       // --- Filter Controls ---
+      document.getElementById('fpsFilterSourceSelect')?.addEventListener('change', (e) => {
+        const item = this.getItem();
+        if (!item || item.type !== 'filter') return;
+        DashboardState.pushSnapshot();
+        item.dataSourceKey = e.target.value;
+        const cols = DataStore.getColumns(item.dataSourceKey);
+        if (cols.length > 0 && !cols.includes(item.filterColumn)) {
+          item.filterColumn = cols[0];
+          if (!item.name || item.name.startsWith('Lọc: ')) {
+            item.name = `Lọc: ${cols[0]}`;
+          }
+        }
+        this.syncPropertiesPanel(item);
+        renderCanvas();
+      });
+
       document.getElementById('fpsFilterColumnSelect')?.addEventListener('change', (e) => {
         const item = this.getItem();
         if (!item || item.type !== 'filter') return;
         DashboardState.pushSnapshot();
         item.filterColumn = e.target.value;
-        const rows = DataStore.getData(item.dataSourceKey);
+        const rows = DataStore.getData(item.dataSourceKey, item.filterColumn);
         if (isProbableDateColumn(item.filterColumn, rows)) {
           item.filterType = 'date';
           item.operator = 'date_range';
         }
-        if (!item.name || item.name === 'Bộ Lọc' || item.name === item.filterColumn) {
-          item.name = e.target.value;
+        if (!item.name || item.name === 'Bộ Lọc' || item.name.startsWith('Lọc: ') || item.name === item.filterColumn) {
+          item.name = `Lọc: ${e.target.value}`;
           const cardTitle = document.querySelector(`#item_${item.id} .db-item-title`);
           if (cardTitle) cardTitle.textContent = item.name;
         }
@@ -8564,11 +9852,29 @@ ${expectedOutput}
 
       // Synchronize Filter section
       if (isFilter) {
+        const sourceSelect = document.getElementById('fpsFilterSourceSelect');
+        if (sourceSelect) {
+          const sources = DataStore.getAvailableSources();
+          sourceSelect.innerHTML = sources.map(s => `<option value="${escapeHtml(s.key)}" ${s.key === item.dataSourceKey ? 'selected' : ''}>📄 ${escapeHtml(s.label)}</option>`).join('');
+          if (item.dataSourceKey) {
+            sourceSelect.value = item.dataSourceKey;
+          } else if (sources.length > 0) {
+            const matched = sources.find(s => DataStore.getColumns(s.key).includes(item.filterColumn));
+            item.dataSourceKey = matched ? matched.key : sources[0].key;
+            sourceSelect.value = item.dataSourceKey;
+          }
+        }
+
         const filterSelect = document.getElementById('fpsFilterColumnSelect');
         if (filterSelect) {
-          const cols = DataStore.getColumns(item.dataSourceKey || Object.keys(DataStore.files)[0]);
+          const cols = DataStore.getColumns(item.dataSourceKey);
           filterSelect.innerHTML = cols.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-          if (item.filterColumn) filterSelect.value = item.filterColumn;
+          if (item.filterColumn && cols.includes(item.filterColumn)) {
+            filterSelect.value = item.filterColumn;
+          } else if (cols.length > 0) {
+            item.filterColumn = cols[0];
+            filterSelect.value = cols[0];
+          }
         }
 
         const typeSelect = document.getElementById('fpsFilterTypeSelect');
@@ -8894,11 +10200,8 @@ ${expectedOutput}
         const newId = 'tab_' + Date.now();
         const newName = `Trang ${DashboardState.present.tabs.length + 1}`;
         DashboardState.present.tabs.push({ id: newId, name: newName });
-        DashboardState.present.activeTabId = newId;
+        switchDashboardTab(newId);
         DashboardState.isDirty = true;
-        renderAllTabs();
-        renderCanvas();
-        triggerDebouncedAutoSave();
         this.syncTabUI();
         showToast(`Đã tạo "${newName}"`, 'success');
       });
@@ -9040,12 +10343,8 @@ ${expectedOutput}
         // Activate
         itemCard.querySelector('.btn-tab-activate')?.addEventListener('click', () => {
           if (DashboardState.present.activeTabId !== tab.id) {
-            syncItemPositionsFromDOM();
-            DashboardState.present.activeTabId = tab.id;
-            renderAllTabs();
-            renderCanvas();
+            switchDashboardTab(tab.id);
             this.renderTabItemsList();
-            triggerDebouncedAutoSave();
           }
         });
 
@@ -9096,11 +10395,13 @@ ${expectedOutput}
             DashboardState.present.items.push(copy);
           });
 
-          DashboardState.present.activeTabId = dupTabId;
+          // Duplicate tab filters nếu có
+          if (DashboardState.tabFilters && DashboardState.tabFilters[tab.id]) {
+            DashboardState.tabFilters[dupTabId] = JSON.parse(JSON.stringify(DashboardState.tabFilters[tab.id]));
+          }
+
+          switchDashboardTab(dupTabId);
           DashboardState.isDirty = true;
-          renderAllTabs();
-          renderCanvas();
-          triggerDebouncedAutoSave();
           this.renderTabItemsList();
           showToast(`Đã nhân bản tab "${dupName}"!`, 'success');
         });
@@ -9113,11 +10414,10 @@ ${expectedOutput}
             DashboardState.pushSnapshot();
             DashboardState.present.tabs = DashboardState.present.tabs.filter(t => t.id !== tab.id);
             DashboardState.present.items = DashboardState.present.items.filter(i => i.tabId !== tab.id);
-            DashboardState.present.activeTabId = DashboardState.present.tabs[0].id;
+            if (DashboardState.tabFilters) delete DashboardState.tabFilters[tab.id];
+            const nextTabId = DashboardState.present.tabs[0]?.id;
+            switchDashboardTab(nextTabId);
             DashboardState.isDirty = true;
-            renderAllTabs();
-            renderCanvas();
-            triggerDebouncedAutoSave();
             this.renderTabItemsList();
             showToast('Đã xóa tab', 'info');
           }
@@ -9385,20 +10685,222 @@ ${expectedOutput}
     return { x: nextX, y: nextY, w: defaultW, h: defaultH };
   }
 
+  const TopFilterBarManager = {
+    getConfig(tabId = null) {
+      const curTab = tabId || DashboardState.present.activeTabId || 'default';
+      if (!DashboardState.present.topFilterBarConfig) DashboardState.present.topFilterBarConfig = {};
+      if (!DashboardState.present.topFilterBarConfig[curTab]) {
+        DashboardState.present.topFilterBarConfig[curTab] = {
+          enabled: false,
+          isSticky: true,
+          isCollapsed: false,
+          collapseStyle: 'circle',
+          title: 'BỘ LỌC TỔNG HỢP',
+          pos: { x: 24, y: 24, w: 1312 }
+        };
+      }
+      return DashboardState.present.topFilterBarConfig[curTab];
+    },
+
+    saveConfig(cfg, tabId = null) {
+      const curTab = tabId || DashboardState.present.activeTabId || 'default';
+      if (!DashboardState.present.topFilterBarConfig) DashboardState.present.topFilterBarConfig = {};
+      DashboardState.present.topFilterBarConfig[curTab] = {
+        ...this.getConfig(curTab),
+        ...cfg
+      };
+      DashboardState.isDirty = true;
+    }
+  };
+
+  function attachTopFilterBarDrag(topBarEl, barConfig, activeTab) {
+    const dragTargets = [
+      topBarEl.querySelector('.db-top-filter-header'),
+      topBarEl.querySelector('.db-top-filter-drag-grip'),
+      topBarEl.querySelector('.db-top-filter-title-group'),
+      topBarEl.querySelector('.db-top-filter-circle-btn')
+    ].filter(Boolean);
+
+    dragTargets.forEach(target => {
+      target.addEventListener('mousedown', (e) => {
+        if (DashboardState.mode === 'preview') return;
+        if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+        if (e._dragHandled) return;
+        e._dragHandled = true;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const zoom = DashboardState.zoom || 1.0;
+        const startMouseX = e.clientX;
+        const startMouseY = e.clientY;
+        const origX = barConfig.pos?.x !== undefined ? barConfig.pos.x : 24;
+        const origY = barConfig.pos?.y !== undefined ? barConfig.pos.y : 24;
+        let hasMoved = false;
+
+        topBarEl.classList.add('is-dragging');
+
+        function onMouseMove(ev) {
+          const dx = (ev.clientX - startMouseX) / zoom;
+          const dy = (ev.clientY - startMouseY) / zoom;
+          if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+            hasMoved = true;
+          }
+          const newX = Math.max(24, Math.min(1360 - 200, Math.round(origX + dx)));
+          const newY = Math.max(10, Math.round(origY + dy));
+          topBarEl.style.left = `${newX}px`;
+          topBarEl.style.top = `${newY}px`;
+          barConfig.pos = barConfig.pos || {};
+          barConfig.pos.x = newX;
+          barConfig.pos.y = newY;
+          topBarEl.dataset.origTop = newY;
+
+          // Mở rộng chiều cao canvas nếu kéo thanh xuống phía dưới
+          const canvas = document.getElementById('dashboardCanvas');
+          if (canvas) {
+            const barBottom = newY + topBarEl.offsetHeight + 80;
+            const currentMinH = parseInt(canvas.style.minHeight || '800', 10);
+            if (barBottom > currentMinH) {
+              canvas.style.minHeight = `${barBottom}px`;
+            }
+          }
+        }
+
+        function onMouseUp() {
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+          topBarEl.classList.remove('is-dragging');
+          if (hasMoved) {
+            topBarEl.dataset.origTop = barConfig.pos?.y || 24;
+            TopFilterBarManager.saveConfig({ pos: { ...barConfig.pos } }, activeTab);
+            triggerDebouncedAutoSave();
+            topBarEl._wasDragged = true;
+            setTimeout(() => { delete topBarEl._wasDragged; }, 120);
+          }
+        }
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      });
+    });
+  }
+
+  function unpinFilterToCanvas(item) {
+    DashboardState.pushSnapshot();
+    item.isPinnedTop = false;
+    item.container = null;
+    const nextPos = getNextAvailablePosition(320, 95);
+    item.pos = { x: nextPos.x, y: Math.max(140, nextPos.y), w: 320, h: 95, zIndex: 10 };
+    DashboardState.isDirty = true;
+    renderCanvas();
+    showToast(`✓ Đã đưa bộ lọc "${item.name || item.filterColumn}" về canvas tự do.`, 'info');
+  }
+
+  function pinFilterToTopBar(item) {
+    DashboardState.pushSnapshot();
+    const curTab = item.tabId || DashboardState.present.activeTabId || 'default';
+    const cfg = TopFilterBarManager.getConfig(curTab);
+    if (!cfg.enabled) {
+      cfg.enabled = true;
+      TopFilterBarManager.saveConfig({ enabled: true }, curTab);
+    }
+    item.isPinnedTop = true;
+    item.container = 'sticky_top';
+    DashboardState.isDirty = true;
+    renderCanvas();
+    showToast(`✓ Đã ghim bộ lọc "${item.name || item.filterColumn}" lên thanh bộ lọc tổng hợp!`, 'success');
+  }
+
+  function updateTopFilterBarStickyPosition() {
+    const topBar = document.getElementById('dbTopFilterBar');
+    if (!topBar) return;
+    const canvas = document.getElementById('dashboardCanvas');
+    if (!canvas) return;
+
+    // Chỉ ghim khi ở chế độ Xem Trước (Preview) hoặc Bản Xuất Độc Lập
+    // Trong chế độ Edit (thiết kế), KHÔNG ghim để người dùng thao tác kéo thả và quan sát canvas tự do
+    if (typeof DashboardState !== 'undefined' && DashboardState.mode !== 'preview') {
+      topBar.style.transform = '';
+      topBar.classList.remove('is-pinned-floating');
+      return;
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const effectiveScale = canvas.offsetWidth > 0 ? (canvasRect.width / canvas.offsetWidth) : 1.0;
+
+    let initialLocalY = 24;
+    if (topBar.dataset.origTop !== undefined && topBar.dataset.origTop !== '') {
+      initialLocalY = parseFloat(topBar.dataset.origTop) || 24;
+    } else {
+      initialLocalY = topBar.offsetTop || 24;
+      topBar.dataset.origTop = initialLocalY;
+    }
+
+    // Xác định toạ độ đỉnh mục tiêu (targetScreenY) trên màn hình viewport:
+    // Nếu header đang sticky ở đỉnh viewport (top <= 2 && bottom > 0): ghim sát ngay mép dưới header.
+    // Nếu không có header hoặc header đã cuộn đi: ghim sát mép đỉnh màn hình (targetScreenY = 0px, không khoảng hở)!
+    const headerEl = document.querySelector('.db-header');
+    let headerBottom = 0;
+    if (headerEl && headerEl.offsetHeight > 0) {
+      const headerRect = headerEl.getBoundingClientRect();
+      if (headerRect.top <= 2 && headerRect.bottom > 0) {
+        headerBottom = headerRect.bottom;
+      }
+    }
+
+    const tabsBar = document.getElementById('dbTabsBar');
+    let tabsBottom = 0;
+    if (tabsBar && tabsBar.offsetHeight > 0) {
+      const tabsRect = tabsBar.getBoundingClientRect();
+      if (tabsRect.top <= headerBottom + 2 && tabsRect.bottom > headerBottom) {
+        tabsBottom = tabsRect.bottom;
+      }
+    }
+
+    // Ghim sát lên đầu hẳn: 0px khoảng trống thừa
+    const targetScreenY = Math.max(headerBottom, tabsBottom);
+
+    // Toạ độ tự nhiên của filter bar trên màn hình viewport (nếu không có translateY)
+    const naturalScreenY = canvasRect.top + (initialLocalY * effectiveScale);
+
+    if (naturalScreenY <= targetScreenY) {
+      // Cần dịch chuyển topBar trong Canvas sao cho:
+      // canvasRect.top + (initialLocalY + neededTranslateY) * effectiveScale === targetScreenY
+      const neededTranslateY = (targetScreenY - canvasRect.top) / effectiveScale - initialLocalY;
+      const maxTranslateY = Math.max(0, canvas.offsetHeight - topBar.offsetHeight - 20);
+      const finalY = Math.min(maxTranslateY, Math.max(0, neededTranslateY));
+
+      topBar.style.transform = `translate3d(0, ${finalY}px, 0)`;
+      topBar.classList.add('is-pinned-floating');
+    } else {
+      topBar.style.transform = '';
+      topBar.classList.remove('is-pinned-floating');
+    }
+  }
+
   function renderCanvas() {
     syncItemPositionsFromDOM();
     const canvas = document.getElementById('dashboardCanvas');
     if (!canvas) return;
     canvas.innerHTML = '';
 
-    const currentTabItems = DashboardState.present.items.filter(i => i.tabId === DashboardState.present.activeTabId);
+    const activeTab = DashboardState.present.activeTabId || 'default';
+    const barConfig = TopFilterBarManager.getConfig(activeTab);
+    const currentTabItems = DashboardState.present.items.filter(i => i.tabId === activeTab);
 
-    // Giới hạn chiều cao vừa vặn các thành phần hiện tại (đảm bảo phủ kín toàn bộ dashboard, không bị lộ khoảng xám)
+    const pinnedFilterItems = currentTabItems.filter(i => i.type === 'filter' && (i.isPinnedTop || i.container === 'sticky_top'));
+    const freeCanvasItems = currentTabItems.filter(i => !(i.type === 'filter' && (i.isPinnedTop || i.container === 'sticky_top')));
+
+    // Giới hạn chiều cao vừa vặn các thành phần tự do trên canvas
     let maxContentBottom = 800;
-    currentTabItems.forEach(item => {
+    freeCanvasItems.forEach(item => {
       const bottom = (item.pos?.y || 0) + (item.pos?.h || 0);
       if (bottom > maxContentBottom) maxContentBottom = bottom;
     });
+    if (barConfig.enabled || pinnedFilterItems.length > 0) {
+      const barBottom = (barConfig.pos?.y || 24) + 120;
+      if (barBottom > maxContentBottom) maxContentBottom = barBottom;
+    }
     const baseMinH = DashboardState.mode === 'preview' ? (window.innerHeight - 56) : 800;
     const computedMinHeight = Math.max(baseMinH, maxContentBottom + 60);
     canvas.style.minHeight = `${computedMinHeight}px`;
@@ -9421,8 +10923,162 @@ ${expectedOutput}
       canvas.appendChild(snappingGuidesEl);
     }
 
-    // Đảm bảo toạ độ các widget luôn nằm an toàn bên trong 2 ranh giới (Trái: 24px, Phải: 1336px)
-    currentTabItems.forEach(item => {
+    // 1. RENDER THANH BỘ LỌC TỔNG HỢP NẾU ĐƯỢC BẬT HOẶC CÓ BỘ LỌC ĐÃ GHIM
+    const shouldRenderTopBar = barConfig.enabled || pinnedFilterItems.length > 0;
+    if (shouldRenderTopBar) {
+      const topBarEl = document.createElement('div');
+      const isCollapsed = Boolean(barConfig.isCollapsed);
+      const collapseStyle = barConfig.collapseStyle || 'circle';
+      const isCircle = collapseStyle === 'circle';
+      topBarEl.id = 'dbTopFilterBar';
+
+      topBarEl.className = `db-top-filter-bar is-movable ${isCollapsed ? 'is-collapsed' : ''} ${isCircle ? 'collapse-style-circle' : 'collapse-style-bar'}`;
+      topBarEl.style.position = 'absolute';
+      topBarEl.style.left = `${barConfig.pos?.x || 24}px`;
+      topBarEl.style.top = `${barConfig.pos?.y || 24}px`;
+      topBarEl.style.width = isCollapsed && isCircle ? '48px' : `${barConfig.pos?.w || 1312}px`;
+      topBarEl.style.zIndex = '900';
+
+      const countLabel = pinnedFilterItems.length === 0 ? 'Chưa có bộ lọc' : `${pinnedFilterItems.length} bộ lọc`;
+      topBarEl.innerHTML = `
+        <div class="db-top-filter-circle-btn" id="btnTopFilterCircleOpen" title="🔍 Mở Bộ Lọc Tổng Hợp (${countLabel})">
+          <span class="db-filter-circle-icon">🔍</span>
+          ${pinnedFilterItems.length > 0 ? `<span class="db-filter-circle-badge">${pinnedFilterItems.length}</span>` : ''}
+        </div>
+        <div class="db-top-filter-expanded-wrap">
+          <div class="db-top-filter-header" title="${DashboardState.mode !== 'preview' ? 'Kéo để di chuyển vị trí thanh bộ lọc trên Canvas' : ''}">
+            <div class="db-top-filter-title-group">
+              ${DashboardState.mode !== 'preview' ? `<span class="db-top-filter-drag-grip" title="Kéo để di chuyển vị trí thanh bộ lọc trên Canvas">⠿</span>` : ''}
+              <span class="db-top-filter-icon">🔍</span>
+              <span class="db-top-filter-title">${escapeHtml(barConfig.title || 'BỘ LỌC TỔNG HỢP')}</span>
+              <span class="db-top-filter-count-badge">📌 ${countLabel}</span>
+            </div>
+            <div class="db-top-filter-actions">
+              ${DashboardState.mode !== 'preview' ? `
+                <button type="button" class="db-top-filter-btn" id="btnToggleCollapseStyle" title="Chuyển đổi kiểu khi đóng: Nút Tròn gọn gàng hoặc Thanh Ngang">${isCircle ? '🔘 Kiểu đóng: Nút Tròn' : '▬ Kiểu đóng: Thanh Ngang'}</button>
+                <button type="button" class="db-top-filter-btn" id="btnResetPosTopBar" title="Căn nhanh thanh bộ lọc về đầu Canvas (X: 24px, Y: 24px)">⬆️ Về đầu Canvas</button>
+              ` : ''}
+              <button type="button" class="db-top-filter-btn primary" id="btnToggleCollapseTopBar" title="Thu gọn bộ lọc">
+                ${isCircle ? '▲ Thu Gọn (Nút Tròn)' : '▲ Thu Gọn'}
+              </button>
+              ${DashboardState.mode !== 'preview' ? `
+                <button type="button" class="db-top-filter-btn is-danger" id="btnCloseTopBar" title="Tắt thanh bộ lọc tổng hợp (đưa các bộ lọc về canvas)">✕ Tắt</button>
+              ` : ''}
+            </div>
+          </div>
+          <div class="db-top-filter-body" id="dbTopFilterBody"></div>
+        </div>
+      `;
+
+      const topBodyEl = topBarEl.querySelector('#dbTopFilterBody');
+
+      if (pinnedFilterItems.length === 0) {
+        topBodyEl.innerHTML = `
+          <div class="db-top-filter-empty-dropzone" id="dbTopFilterDropzone">
+            <span style="font-size:16px;">📥</span>
+            <span>Kéo thả các Bộ Lọc vào đây để gán vào thanh tổng hợp, hoặc bấm nút "📌 Ghim Top" trên bộ lọc.</span>
+          </div>
+        `;
+      } else {
+        pinnedFilterItems.forEach(item => {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'db-top-filter-item-wrapper';
+          wrapper.id = `pinned_item_${item.id}`;
+
+          wrapper.innerHTML = `
+            <div class="db-top-filter-item-header">
+              <span class="db-top-filter-item-title">${escapeHtml(item.name || item.filterColumn)}</span>
+              ${DashboardState.mode !== 'preview' ? `
+                <button type="button" class="db-top-filter-unpin-btn" data-unpin-id="${item.id}" title="Tháo khỏi thanh trên cùng, chuyển về canvas tự do">📌 Bỏ ghim</button>
+              ` : ''}
+            </div>
+            <div class="db-item-body" id="item_body_${item.id}"></div>
+          `;
+          topBodyEl.appendChild(wrapper);
+
+          wrapper.querySelector('[data-unpin-id]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            unpinFilterToCanvas(item);
+          });
+        });
+      }
+
+      canvas.appendChild(topBarEl);
+
+      // Lưu lại toạ độ gốc ban đầu khi chưa bị translate
+      topBarEl.dataset.origTop = topBarEl.offsetTop;
+
+      // Render nội dung bộ lọc SAU KHI topBarEl và các container item_body_${item.id} đã gắn vào DOM
+      pinnedFilterItems.forEach(item => {
+        renderItemContent(item);
+      });
+
+      // Mở thanh bộ lọc khi nhấp vào nút tròn
+      topBarEl.querySelector('#btnTopFilterCircleOpen')?.addEventListener('click', (e) => {
+        if (topBarEl._wasDragged) return;
+        e.stopPropagation();
+        barConfig.isCollapsed = false;
+        TopFilterBarManager.saveConfig({ isCollapsed: false }, activeTab);
+        renderCanvas();
+        triggerDebouncedAutoSave();
+      });
+
+      // Kéo di chuyển thanh khi ở chế độ thiết kế (Edit)
+      if (DashboardState.mode !== 'preview') {
+        attachTopFilterBarDrag(topBarEl, barConfig, activeTab);
+
+        topBarEl.querySelector('#btnToggleCollapseStyle')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const nextStyle = barConfig.collapseStyle === 'circle' ? 'bar' : 'circle';
+          barConfig.collapseStyle = nextStyle;
+          TopFilterBarManager.saveConfig({ collapseStyle: nextStyle }, activeTab);
+          renderCanvas();
+          triggerDebouncedAutoSave();
+          showToast(nextStyle === 'circle' ? '✓ Đã chọn: Thu gọn thành Nút Tròn gọn gàng.' : '✓ Đã chọn: Thu gọn thành Thanh Ngang tiêu đề.', 'info');
+        });
+
+        topBarEl.querySelector('#btnResetPosTopBar')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          barConfig.pos = { x: 24, y: 24, w: 1312 };
+          topBarEl.dataset.origTop = 24;
+          TopFilterBarManager.saveConfig({ pos: barConfig.pos }, activeTab);
+          renderCanvas();
+          triggerDebouncedAutoSave();
+          showToast('✓ Đã căn thanh bộ lọc về vị trí đầu Canvas (X: 24, Y: 24).', 'info');
+        });
+      }
+
+      topBarEl.querySelector('#btnToggleCollapseTopBar')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nextCollapsed = !barConfig.isCollapsed;
+        barConfig.isCollapsed = nextCollapsed;
+        TopFilterBarManager.saveConfig({ isCollapsed: nextCollapsed }, activeTab);
+        renderCanvas();
+        triggerDebouncedAutoSave();
+      });
+
+      topBarEl.querySelector('#btnCloseTopBar')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const ok = await AppDialog.confirm('Bạn có chắc muốn tắt Thanh Bộ Lọc Tổng Hợp? Các bộ lọc bên trong sẽ được đưa về Canvas tự do.', 'Tắt Thanh Bộ Lọc', { confirmText: 'Tắt Thanh', isDanger: true });
+        if (ok) {
+          DashboardState.pushSnapshot();
+          pinnedFilterItems.forEach(item => {
+            item.isPinnedTop = false;
+            item.container = null;
+            const nextPos = getNextAvailablePosition(320, 95);
+            item.pos = { x: nextPos.x, y: Math.max(140, nextPos.y), w: 320, h: 95, zIndex: 10 };
+          });
+          TopFilterBarManager.saveConfig({ enabled: false }, activeTab);
+          DashboardState.isDirty = true;
+          renderCanvas();
+          triggerDebouncedAutoSave();
+          showToast('✓ Đã tắt Thanh Bộ Lọc Tổng Hợp.', 'info');
+        }
+      });
+    }
+
+    // Đảm bảo toạ độ các widget tự do luôn nằm an toàn bên trong 2 ranh giới (Trái: 24px, Phải: 1336px)
+    freeCanvasItems.forEach(item => {
       if (!item.pos) item.pos = { x: 24, y: 24, w: 400, h: 300 };
       if (item.pos.y < 24) item.pos.y = 24;
       if (item.pos.x < 24) item.pos.x = 24;
@@ -9451,10 +11107,10 @@ ${expectedOutput}
       return;
     }
 
-    currentTabItems.forEach(item => {
+    freeCanvasItems.forEach(item => {
       const el = document.createElement('div');
       const isLocked = Boolean(item.isLocked);
-      const isSelected = DashboardState.selectedItemId === item.id;
+      const isSelected = DashboardState.mode !== 'preview' && DashboardState.selectedItemId === item.id;
       const isHideHeader = Boolean(item.hideHeader);
       const isFramelessType = ['shape', 'heading', 'text', 'image'].includes(item.type);
       const shapeSubclass = item.type === 'shape' ? (item.shapeType === 'line' ? 'is-shape-line' : 'is-shape') : '';
@@ -9468,9 +11124,19 @@ ${expectedOutput}
         el.style.zIndex = item.pos.zIndex;
       }
 
-      if (DashboardState.mode === 'preview' && isFramelessType) {
-        // Ở chế độ Xem Trước, hoàn toàn không hiển thị header hay viền hộp cho hình vẽ, đường thẳng, văn bản
-        el.innerHTML = `<div class="db-item-body" id="item_body_${item.id}" style="padding:0;height:100%;"></div>`;
+      if (DashboardState.mode === 'preview') {
+        if (isFramelessType || isHideHeader) {
+          el.innerHTML = `<div class="db-item-body" id="item_body_${item.id}" style="${isFramelessType ? 'padding:0;' : ''}height:100%;"></div>`;
+        } else {
+          el.innerHTML = `
+            <div class="db-item-header">
+              <div class="db-item-header-left">
+                <span class="db-item-title">${escapeHtml(item.name || item.type)}</span>
+              </div>
+            </div>
+            <div class="db-item-body" id="item_body_${item.id}"></div>
+          `;
+        }
       } else {
         el.innerHTML = `
           <div class="db-item-header">
@@ -9479,6 +11145,7 @@ ${expectedOutput}
               <span class="db-item-title">${escapeHtml(item.name || item.type)}</span>
             </div>
             <div class="db-item-actions">
+              ${item.type === 'filter' ? `<button class="db-item-action-btn pin-btn" data-action="pin-top" data-id="${item.id}" title="Ghim lên thanh cố định ở trên cùng">📌 Ghim Top</button>` : ''}
               <button class="db-item-action-btn" data-action="toggle-header" data-id="${item.id}" title="Ẩn thanh tiêu đề (Chỉ hiện chart &amp; nội dung)">🕶️</button>
               <button class="db-item-action-btn" data-action="toggle-lock" data-id="${item.id}" title="${isLocked ? 'Mở khóa di chuyển' : 'Khóa vị trí'}">${isLocked ? '🔒' : '🔓'}</button>
               <button class="db-item-action-btn" data-action="z-up" data-id="${item.id}" title="Đưa lên trên (Bring to front)">⬆️</button>
@@ -9493,6 +11160,7 @@ ${expectedOutput}
           <!-- Floating mini actions when header is hidden -->
           <div class="db-item-mini-actions" data-id="${item.id}">
             <span class="db-item-mini-grip" title="Kéo để di chuyển">⠿</span>
+            ${item.type === 'filter' ? `<button class="db-item-mini-btn" data-action="pin-top" data-id="${item.id}" title="Ghim lên thanh trên cùng">📌 Ghim</button>` : ''}
             <button class="db-item-mini-btn" data-action="toggle-header" data-id="${item.id}" title="Hiện lại thanh tiêu đề (Header)">👁️ Hiện Header</button>
             <button class="db-item-mini-btn props-btn" data-action="open-sidebar" data-id="${item.id}" title="Mở bảng Thuộc tính / Sidebar">⚙️ Thuộc tính</button>
             ${item.type === 'chart' ? `<button class="db-item-mini-btn" data-action="edit" data-id="${item.id}" title="Sửa code ECharts">✏️ Code</button>` : `<button class="db-item-mini-btn" data-action="edit-widget" data-id="${item.id}" title="Sửa widget">✏️ Sửa</button>`}
@@ -9525,11 +11193,14 @@ ${expectedOutput}
 
       canvas.appendChild(el);
       renderItemContent(item);
-      attachItemDragAndResize(el, item);
+      if (DashboardState.mode !== 'preview') {
+        attachItemDragAndResize(el, item);
+      }
     });
 
     // Deselect and hide toolbar when clicking on canvas background
     canvas.addEventListener('click', (e) => {
+      if (DashboardState.mode === 'preview') return;
       if (!e.target.closest('.db-item-box') && !e.target.closest('#canvaTextToolbar') && !e.target.closest('#figmaPropertiesSidebar')) {
         DashboardState.selectedItemId = null;
         document.querySelectorAll('.db-item-box').forEach(b => b.classList.remove('selected'));
@@ -9539,6 +11210,8 @@ ${expectedOutput}
         }
       }
     });
+
+    updateTopFilterBarStickyPosition();
   }
 
   function renderItemContent(item) {
@@ -9552,16 +11225,18 @@ ${expectedOutput}
       chartDiv.id = `chart_el_${item.id}`;
       body.appendChild(chartDiv);
 
-      // Nút Edit trực tiếp trên biểu đồ để mở Studio Popup
-      const editBadge = document.createElement('div');
-      editBadge.className = 'db-chart-edit-badge';
-      editBadge.title = 'Nhấn để mở Studio Popup: chỉnh sửa mã ECharts JS và xem Live Demo';
-      editBadge.innerHTML = '<span>✏️</span><span>Sửa Biểu Đồ (Popup)</span>';
-      editBadge.addEventListener('click', (e) => {
-        e.stopPropagation();
-        ChartStudioModal.open(item.id);
-      });
-      body.appendChild(editBadge);
+      // Nút Edit trực tiếp trên biểu đồ để mở Studio Popup (chỉ hiện trong Chế độ Thiết Kế, không hiện khi Xem Trước)
+      if (DashboardState.mode !== 'preview') {
+        const editBadge = document.createElement('div');
+        editBadge.className = 'db-chart-edit-badge';
+        editBadge.title = 'Nhấn để mở Studio Popup: chỉnh sửa mã ECharts JS và xem Live Demo';
+        editBadge.innerHTML = '<span>✏️</span><span>Sửa Biểu Đồ (Popup)</span>';
+        editBadge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          ChartStudioModal.open(item.id);
+        });
+        body.appendChild(editBadge);
+      }
 
       setTimeout(() => {
         let chart = echarts.getInstanceByDom(chartDiv);
@@ -9569,12 +11244,12 @@ ${expectedOutput}
         // Luôn sử dụng Light Theme cho ECharts
         chart = echarts.init(chartDiv, null);
 
-        const data = getFilteredData(item.dataSourceKey);
-        const { option, error } = evaluateEChartsCode(item.code, data);
+        const data = getFilteredData(item.dataSourceKey, [], item.tabId);
+        const { option, error } = evaluateEChartsCode(item.code, data, { tabId: item.tabId }, chart);
 
         if (error) {
           chartDiv.innerHTML = `<div class="db-chart-error-banner" style="color:#ef4444;padding:12px;text-align:center;font-size:12px;">⚠️ Lỗi render ECharts:<br/>${escapeHtml(error)}<br/><button class="db-btn-tool primary" style="margin-top:8px;" onclick="window.ChartStudioModal && window.ChartStudioModal.open('${item.id}')">Mở Studio Sửa Lỗi</button></div>`;
-        } else {
+        } else if (option && Object.keys(option).length > 0) {
           chart.setOption(option, true);
         }
       }, 50);
@@ -9649,9 +11324,7 @@ ${expectedOutput}
           if (item.btnAction === 'url' && item.btnTarget) {
             window.open(item.btnTarget, '_blank');
           } else if (item.btnAction === 'tab' && item.btnTarget) {
-            DashboardState.present.activeTabId = item.btnTarget;
-            renderAllTabs();
-            renderCanvas();
+            switchDashboardTab(item.btnTarget);
           }
         } else {
           showToast(`Nhấp nút: ${item.btnAction === 'url' ? 'Mở link ' + item.btnTarget : 'Chuyển sang Tab'} (Bật "👁️ Xem Trước" để chạy thử)`, 'info');
@@ -9666,7 +11339,12 @@ ${expectedOutput}
       `;
     } else if (item.type === 'filter') {
       const col = item.filterColumn;
-      const allRows = DataStore.getData(item.dataSourceKey);
+      if (!item.dataSourceKey && col) {
+        const sources = DataStore.getAvailableSources();
+        const matched = sources.find(s => DataStore.getColumns(s.key).includes(col));
+        if (matched) item.dataSourceKey = matched.key;
+      }
+      const allRows = DataStore.getData(item.dataSourceKey, col);
       const isDateCol = isProbableDateColumn(col, allRows);
 
       // 1. Phân định Loại Bộ Lọc (Chuẩn BI: range, comparison, select, multiselect, date, text)
@@ -9685,15 +11363,40 @@ ${expectedOutput}
         parentItem = DashboardState.present.items.find(i => i.id === item.parentFilterId);
       }
 
-      // Lấy dữ liệu khả dụng: áp dụng tất cả các bộ lọc khác (đặc biệt là bộ lọc cha nếu có), loại trừ cột col này
-      const availableRows = getFilteredData(item.dataSourceKey, [col]);
-      const uniqueVals = Array.from(new Set(availableRows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== ''))).sort((a, b) => {
-        const na = Number(a), nb = Number(b);
-        if (!isNaN(na) && !isNaN(nb)) return na - nb;
-        return String(a).localeCompare(String(b));
-      });
+      const itemTabId = item.tabId || DashboardState.present?.activeTabId || 'default';
+      const tabFiltersMap = DashboardState.tabFilters?.[itemTabId] || {};
+      const filterState = tabFiltersMap[col] !== undefined
+        ? tabFiltersMap[col]
+        : (itemTabId === (DashboardState.present?.activeTabId || 'default') ? DashboardState.activeFilters[col] : undefined);
 
-      const filterState = DashboardState.activeFilters[col];
+      const setTabFilterState = (valObj, keepDropdownOpen = false) => {
+        if (!DashboardState.tabFilters) DashboardState.tabFilters = {};
+        if (!DashboardState.tabFilters[itemTabId]) DashboardState.tabFilters[itemTabId] = {};
+        const isCurrentActiveTab = itemTabId === (DashboardState.present?.activeTabId || 'default');
+
+        if (valObj === null || valObj === undefined) {
+          delete DashboardState.tabFilters[itemTabId][col];
+          if (isCurrentActiveTab) {
+            delete DashboardState.activeFilters[col];
+          }
+        } else {
+          DashboardState.tabFilters[itemTabId][col] = valObj;
+          if (isCurrentActiveTab) {
+            DashboardState.activeFilters[col] = valObj;
+          }
+        }
+        if (DashboardState.present) {
+          DashboardState.present.tabFilters = JSON.parse(JSON.stringify(DashboardState.tabFilters));
+          DashboardState.present.activeFilters = JSON.parse(JSON.stringify(DashboardState.activeFilters));
+        }
+        if (keepDropdownOpen) {
+          DashboardState._openDropdownFilterId = item.id;
+        } else {
+          DashboardState._openDropdownFilterId = null;
+        }
+        renderCanvas();
+      };
+
       let currentOp = item.operator;
       if (!currentOp) {
         if (fType === 'range') currentOp = 'between';
@@ -9725,10 +11428,39 @@ ${expectedOutput}
         }
       }
 
+      // Danh sách tùy chọn của bộ lọc: độc lập theo toàn bộ bảng, chỉ lọc phân cấp khi có cấu hình bộ lọc cha (parentFilterId)
+      let filterSourceRows = allRows;
+      if (parentItem && parentItem.filterColumn) {
+        const parentCol = parentItem.filterColumn;
+        const parentVal = (DashboardState.tabFilters?.[itemTabId] || {})[parentCol] || DashboardState.activeFilters[parentCol];
+        if (parentVal) {
+          filterSourceRows = getFilteredData(item.dataSourceKey, Object.keys(DashboardState.activeFilters).filter(k => k !== parentCol), itemTabId);
+        }
+      }
+      const uniqueVals = Array.from(new Set((filterSourceRows || allRows).map(r => r[col]).filter(v => v !== null && v !== undefined && v !== ''))).sort((a, b) => {
+        const na = Number(a), nb = Number(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return String(a).localeCompare(String(b));
+      });
+
+      // Luôn đảm bảo các mục người dùng đã chọn xuất hiện trong danh sách lựa chọn
+      if (Array.isArray(selectedValues)) {
+        selectedValues.forEach(sv => {
+          if (sv !== null && sv !== undefined && sv !== '' && !uniqueVals.map(String).includes(String(sv))) {
+            uniqueVals.push(sv);
+          }
+        });
+      }
+
       // Tự động reset nếu giá trị select đơn không còn trong tập giá trị của bộ lọc cha
       if (fType === 'select' && currentVal !== 'all' && currentVal !== '' && typeof currentVal === 'string') {
         if (uniqueVals.length > 0 && !uniqueVals.some(v => String(v) === String(currentVal))) {
-          delete DashboardState.activeFilters[col];
+          if (DashboardState.tabFilters?.[itemTabId]) {
+            delete DashboardState.tabFilters[itemTabId][col];
+          }
+          if (itemTabId === (DashboardState.present?.activeTabId || 'default')) {
+            delete DashboardState.activeFilters[col];
+          }
           currentVal = 'all';
         }
       }
@@ -9743,10 +11475,26 @@ ${expectedOutput}
       if (fType === 'range') {
         if (isDate) {
           isFiltering = Boolean(startDate || endDate);
-          if (isFiltering) activeBadgeHtml = `<span class="db-filter-active-badge">📅 [${startDate || '...'} ➔ ${endDate || '...'}]</span>`;
+          let bStart = startDate;
+          let bEnd = endDate;
+          if (startDate && endDate) {
+            const sTs = parseDateToTimestamp(startDate);
+            const eTs = parseDateToTimestamp(endDate);
+            if (sTs !== null && eTs !== null && sTs > eTs) {
+              bStart = endDate;
+              bEnd = startDate;
+            }
+          }
+          if (isFiltering) activeBadgeHtml = `<span class="db-filter-active-badge">📅 [${bStart || '...'} ➔ ${bEnd || '...'}]</span>`;
         } else {
           isFiltering = Boolean(minVal !== '' || maxVal !== '');
-          if (isFiltering) activeBadgeHtml = `<span class="db-filter-active-badge">↔️ [${minVal !== '' ? minVal : '-∞'} ➔ ${maxVal !== '' ? maxVal : '+∞'}]</span>`;
+          let bMin = minVal;
+          let bMax = maxVal;
+          if (minVal !== '' && maxVal !== '' && !isNaN(Number(minVal)) && !isNaN(Number(maxVal)) && Number(minVal) > Number(maxVal)) {
+            bMin = maxVal;
+            bMax = minVal;
+          }
+          if (isFiltering) activeBadgeHtml = `<span class="db-filter-active-badge">↔️ [${bMin !== '' ? bMin : '-∞'} ➔ ${bMax !== '' ? bMax : '+∞'}]</span>`;
         }
       } else if (fType === 'multiselect') {
         isFiltering = Boolean(selectedValues.length > 0 && selectedValues.length < uniqueVals.length);
@@ -9754,7 +11502,17 @@ ${expectedOutput}
       } else if (fType === 'date') {
         if (currentOp === 'date_range') {
           isFiltering = Boolean(startDate || endDate);
-          if (isFiltering) activeBadgeHtml = `<span class="db-filter-active-badge">📅 [${startDate || '...'} ➔ ${endDate || '...'}]</span>`;
+          let bStart = startDate;
+          let bEnd = endDate;
+          if (startDate && endDate) {
+            const sTs = parseDateToTimestamp(startDate);
+            const eTs = parseDateToTimestamp(endDate);
+            if (sTs !== null && eTs !== null && sTs > eTs) {
+              bStart = endDate;
+              bEnd = startDate;
+            }
+          }
+          if (isFiltering) activeBadgeHtml = `<span class="db-filter-active-badge">📅 [${bStart || '...'} ➔ ${bEnd || '...'}]</span>`;
         } else {
           isFiltering = Boolean(currentVal !== 'all' && currentVal !== '');
           if (isFiltering) activeBadgeHtml = `<span class="db-filter-active-badge">📅 ${currentOp} ${escapeHtml(currentVal)}</span>`;
@@ -9919,8 +11677,7 @@ ${expectedOutput}
         const resetBtn = document.getElementById(`filter_reset_${item.id}`);
         resetBtn?.addEventListener('click', (e) => {
           e.stopPropagation();
-          delete DashboardState.activeFilters[col];
-          renderCanvas();
+          setTabFilterState(null);
         });
 
         if (fType === 'range') {
@@ -9931,11 +11688,10 @@ ${expectedOutput}
               const sVal = startInp ? startInp.value : '';
               const eVal = endInp ? endInp.value : '';
               if (!sVal && !eVal) {
-                delete DashboardState.activeFilters[col];
+                setTabFilterState(null);
               } else {
-                DashboardState.activeFilters[col] = { op: 'date_range', start: sVal, end: eVal, isDate: true };
+                setTabFilterState({ op: 'date_range', start: sVal, end: eVal, isDate: true });
               }
-              renderCanvas();
             };
             startInp?.addEventListener('change', handleDateRange);
             endInp?.addEventListener('change', handleDateRange);
@@ -9946,11 +11702,10 @@ ${expectedOutput}
               const minV = minInp ? minInp.value.trim() : '';
               const maxV = maxInp ? maxInp.value.trim() : '';
               if (minV === '' && maxV === '') {
-                delete DashboardState.activeFilters[col];
+                setTabFilterState(null);
               } else {
-                DashboardState.activeFilters[col] = { op: 'between', min: minV, max: maxV, start: minV, end: maxV };
+                setTabFilterState({ op: 'between', min: minV, max: maxV, start: minV, end: maxV });
               }
-              renderCanvas();
             };
             minInp?.addEventListener('change', handleRange);
             maxInp?.addEventListener('change', handleRange);
@@ -9965,11 +11720,10 @@ ${expectedOutput}
             item.operator = op;
             const val = valEl ? valEl.value.trim() : '';
             if (val === '' || val === 'all') {
-              delete DashboardState.activeFilters[col];
+              setTabFilterState(null);
             } else {
-              DashboardState.activeFilters[col] = { op, val };
+              setTabFilterState({ op, val });
             }
-            renderCanvas();
           };
           opSel?.addEventListener('change', applyComp);
           valEl?.addEventListener('change', applyComp);
@@ -9988,12 +11742,91 @@ ${expectedOutput}
           const btnAll = document.getElementById(`filter_ms_all_${item.id}`);
           const btnNone = document.getElementById(`filter_ms_none_${item.id}`);
 
+          // Khôi phục trạng thái mở nếu trước đó dropdown này vừa được tương tác
+          if (DashboardState._openDropdownFilterId === item.id && drop) {
+            drop.classList.add('open');
+            const parentBox = drop.closest('.db-item-box') || drop.closest('.db-top-filter-item-wrapper');
+            if (parentBox) {
+              if (parentBox.dataset.originalZIndex === undefined) {
+                parentBox.dataset.originalZIndex = parentBox.style.zIndex || '';
+              }
+              parentBox.classList.add('dropdown-open');
+              parentBox.style.zIndex = '1000000';
+            }
+            const topBar = drop.closest('.db-top-filter-bar');
+            if (topBar) {
+              if (topBar.dataset.originalZIndex === undefined) {
+                topBar.dataset.originalZIndex = topBar.style.zIndex || '';
+              }
+              topBar.classList.add('dropdown-open');
+              topBar.style.zIndex = '1000000';
+            }
+          }
+
           btn?.addEventListener('click', (e) => {
             e.stopPropagation();
             document.querySelectorAll('.db-filter-multiselect-dropdown.open').forEach(d => {
-              if (d !== drop) d.classList.remove('open');
+              if (d !== drop) {
+                d.classList.remove('open');
+                const pBox = d.closest('.db-item-box') || d.closest('.db-top-filter-item-wrapper');
+                if (pBox) {
+                  pBox.classList.remove('dropdown-open');
+                  if (pBox.dataset.originalZIndex !== undefined) {
+                    pBox.style.zIndex = pBox.dataset.originalZIndex;
+                  } else {
+                    pBox.style.zIndex = '';
+                  }
+                }
+                const tb = d.closest('.db-top-filter-bar');
+                if (tb) {
+                  tb.classList.remove('dropdown-open');
+                  if (tb.dataset.originalZIndex !== undefined) {
+                    tb.style.zIndex = tb.dataset.originalZIndex;
+                  } else {
+                    tb.style.zIndex = '';
+                  }
+                }
+              }
             });
-            drop?.classList.toggle('open');
+
+            const isOpen = drop?.classList.toggle('open');
+            const parentBox = drop?.closest('.db-item-box') || drop?.closest('.db-top-filter-item-wrapper');
+            const topBar = drop?.closest('.db-top-filter-bar');
+            if (parentBox) {
+              if (isOpen) {
+                if (parentBox.dataset.originalZIndex === undefined) {
+                  parentBox.dataset.originalZIndex = parentBox.style.zIndex || '';
+                }
+                parentBox.classList.add('dropdown-open');
+                parentBox.style.zIndex = '1000000';
+                DashboardState._openDropdownFilterId = item.id;
+              } else {
+                parentBox.classList.remove('dropdown-open');
+                if (parentBox.dataset.originalZIndex !== undefined) {
+                  parentBox.style.zIndex = parentBox.dataset.originalZIndex;
+                } else {
+                  parentBox.style.zIndex = '';
+                }
+                DashboardState._openDropdownFilterId = null;
+              }
+            }
+            if (topBar) {
+              if (isOpen) {
+                if (topBar.dataset.originalZIndex === undefined) {
+                  topBar.dataset.originalZIndex = topBar.style.zIndex || '';
+                }
+                topBar.classList.add('dropdown-open');
+                topBar.style.zIndex = '1000000';
+              } else {
+                topBar.classList.remove('dropdown-open');
+                if (topBar.dataset.originalZIndex !== undefined) {
+                  topBar.style.zIndex = topBar.dataset.originalZIndex;
+                } else {
+                  topBar.style.zIndex = '';
+                }
+              }
+            }
+
             if (drop?.classList.contains('open')) {
               searchInp?.focus();
             }
@@ -10012,23 +11845,20 @@ ${expectedOutput}
           const applyMultiSelect = () => {
             const checked = Array.from(document.querySelectorAll(`.filter_ms_chk_${item.id}:checked`)).map(c => c.value);
             if (checked.length === 0 || checked.length === uniqueVals.length) {
-              delete DashboardState.activeFilters[col];
+              setTabFilterState(null, true);
             } else {
-              DashboardState.activeFilters[col] = { op: 'in', values: checked, val: checked };
+              setTabFilterState({ op: 'in', values: checked, val: checked }, true);
             }
-            renderCanvas();
           };
 
           chks.forEach(c => c.addEventListener('change', applyMultiSelect));
 
           btnAll?.addEventListener('click', () => {
-            delete DashboardState.activeFilters[col];
-            renderCanvas();
+            setTabFilterState(null, true);
           });
 
           btnNone?.addEventListener('click', () => {
-            DashboardState.activeFilters[col] = { op: 'in', values: [], val: [] };
-            renderCanvas();
+            setTabFilterState({ op: 'in', values: [], val: [] }, true);
           });
         } else if (fType === 'text') {
           const opSel = document.getElementById(`filter_op_${item.id}`);
@@ -10038,11 +11868,10 @@ ${expectedOutput}
             item.operator = op;
             const val = valEl ? valEl.value.trim() : '';
             if (val === '' || val === 'all') {
-              delete DashboardState.activeFilters[col];
+              setTabFilterState(null);
             } else {
-              DashboardState.activeFilters[col] = { op, val };
+              setTabFilterState({ op, val });
             }
-            renderCanvas();
           };
           opSel?.addEventListener('change', applyText);
           valEl?.addEventListener('change', applyText);
@@ -10065,19 +11894,18 @@ ${expectedOutput}
               const sVal = startInp ? startInp.value : '';
               const eVal = endInp ? endInp.value : '';
               if (!sVal && !eVal) {
-                delete DashboardState.activeFilters[col];
+                setTabFilterState(null);
               } else {
-                DashboardState.activeFilters[col] = { op: 'date_range', start: sVal, end: eVal, isDate: true };
+                setTabFilterState({ op: 'date_range', start: sVal, end: eVal, isDate: true });
               }
             } else {
               const dVal = singleInp ? singleInp.value : '';
               if (!dVal) {
-                delete DashboardState.activeFilters[col];
+                setTabFilterState(null);
               } else {
-                DashboardState.activeFilters[col] = { op, val: dVal, isDate: true };
+                setTabFilterState({ op, val: dVal, isDate: true });
               }
             }
-            renderCanvas();
           };
 
           startInp?.addEventListener('change', handleDateChange);
@@ -10093,16 +11921,15 @@ ${expectedOutput}
           valEl?.addEventListener('change', (e) => {
             const val = e.target.value;
             if (val === '' || val === 'all') {
-              delete DashboardState.activeFilters[col];
+              setTabFilterState(null);
             } else {
-              DashboardState.activeFilters[col] = { op: '=', val };
+              setTabFilterState({ op: '=', val });
             }
-            renderCanvas();
           });
         }
       }, 20);
     } else if (item.type === 'kpi') {
-      const data = getFilteredData(item.dataSourceKey);
+      const data = getFilteredData(item.dataSourceKey, [], item.tabId || DashboardState.present?.activeTabId || 'default');
       const numVals = data.map(r => Number(r[item.metricColumn])).filter(n => !isNaN(n));
       let sum = 0;
       if (item.aggregation === 'avg') {
@@ -10229,6 +12056,16 @@ ${expectedOutput}
               canvas.style.minHeight = `${itemBottom + 200}px`;
             }
           }
+
+          // Tự động nhận diện khi kéo Filter lướt qua thanh top-filter-bar
+          if (item.type === 'filter') {
+            const topBar = document.getElementById('dbTopFilterBar');
+            if (topBar) {
+              const barRect = topBar.getBoundingClientRect();
+              const isOver = ev.clientY >= (barRect.top - 20) && ev.clientY <= (barRect.bottom + 30);
+              topBar.classList.toggle('drag-over', isOver);
+            }
+          }
         }
 
         function onMouseUp() {
@@ -10236,6 +12073,19 @@ ${expectedOutput}
           window.removeEventListener('mousemove', onMouseMove);
           window.removeEventListener('mouseup', onMouseUp);
           cardEl.classList.remove('dragging');
+
+          const topBar = document.getElementById('dbTopFilterBar');
+          const isOverTopBar = topBar && topBar.classList.contains('drag-over');
+          if (topBar) topBar.classList.remove('drag-over');
+
+          // Nếu thả filter vào vùng thanh trên cùng -> Tự động gán/ghim lên thanh cố định!
+          if (item.type === 'filter' && isOverTopBar) {
+            delete item._tempX;
+            delete item._tempY;
+            pinFilterToTopBar(item);
+            triggerDebouncedAutoSave();
+            return;
+          }
 
           if (item._tempX !== undefined && item._tempY !== undefined) {
             const hasMoved = (item._tempX !== origX || item._tempY !== origY);
@@ -10595,34 +12445,73 @@ ${expectedOutput}
   }
 
   // ===========================================================================
-  // 12.6 CANVAS BACKGROUND SWITCHER (TRẮNG, CHẤM BI, DỌC KẺ, LƯỚI Ô VUÔNG)
+  // 12.6 CANVAS BACKGROUND SWITCHER (TRẮNG, CHẤM BI, DỌC KẺ, KẺ NGANG, LƯỚI Ô VUÔNG)
   // ===========================================================================
   function setCanvasBackground(bgType) {
-    const valid = ['white', 'dots', 'stripes', 'grid'];
+    const valid = ['white', 'dots', 'stripes', 'horizontal', 'grid'];
     if (!valid.includes(bgType)) bgType = 'dots';
 
     DashboardState.pushSnapshot();
     if (!DashboardState.present.theme) DashboardState.present.theme = {};
     DashboardState.present.theme.canvasBg = bgType;
 
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('mb_dashboard_canvas_bg', bgType);
+      }
+    } catch (_) {}
+
     applyCanvasBackgroundUI(bgType);
-    const bgName = bgType === 'white' ? 'Trắng trơn' : bgType === 'dots' ? 'Chấm bi' : bgType === 'stripes' ? 'Dọc kẻ' : 'Lưới ô vuông';
-    showToast(`Đã đổi nền Dashboard: ${bgName}!`, 'success');
+
+    // Lưu ngay lập tức vào catalog và session
+    try {
+      if (typeof SavedDashboardsCatalog !== 'undefined' && SavedDashboardsCatalog.saveCurrent) {
+        SavedDashboardsCatalog.saveCurrent(false);
+      }
+      saveLastEditedSessionToLocalStorage();
+    } catch (_) {}
+    triggerDebouncedAutoSave();
+
+    const bgNames = {
+      white: 'Trắng trơn',
+      dots: 'Chấm bi',
+      stripes: 'Dọc kẻ',
+      horizontal: 'Kẻ ngang',
+      grid: 'Lưới ô vuông'
+    };
+    showToast(`Đã đổi và lưu nền Dashboard: ${bgNames[bgType] || bgType}!`, 'success');
   }
 
   function applyCanvasBackgroundUI(bgType) {
+    const valid = ['white', 'dots', 'stripes', 'horizontal', 'grid'];
+    if (!valid.includes(bgType)) {
+      const cached = (typeof localStorage !== 'undefined' && localStorage.getItem('mb_dashboard_canvas_bg')) || null;
+      bgType = (cached && valid.includes(cached)) ? cached : 'dots';
+    }
+
     const wrapper = document.getElementById('canvasWrapper');
     const canvas = document.getElementById('dashboardCanvas');
-    const classes = ['canvas-bg-white', 'canvas-bg-dots', 'canvas-bg-stripes', 'canvas-bg-grid'];
+    const classes = ['canvas-bg-white', 'canvas-bg-dots', 'canvas-bg-stripes', 'canvas-bg-horizontal', 'canvas-bg-grid'];
 
     if (wrapper) {
       wrapper.classList.remove(...classes);
-      wrapper.classList.add(`canvas-bg-${bgType || 'dots'}`);
+      wrapper.classList.add(`canvas-bg-${bgType}`);
     }
     if (canvas) {
       canvas.classList.remove(...classes);
-      canvas.classList.add(`canvas-bg-${bgType || 'dots'}`);
+      canvas.classList.add(`canvas-bg-${bgType}`);
     }
+
+    if (DashboardState.present) {
+      if (!DashboardState.present.theme) DashboardState.present.theme = {};
+      DashboardState.present.theme.canvasBg = bgType;
+    }
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('mb_dashboard_canvas_bg', bgType);
+      }
+    } catch (_) {}
 
     // Đánh dấu active trong menu dropdown nếu có
     document.querySelectorAll('#dropdownCanvasBg [data-bg-type]').forEach(btn => {
@@ -10847,6 +12736,27 @@ ${expectedOutput}
     document.getElementById('menuAddFilter')?.addEventListener('click', () => {
       addElementsDropdown?.classList.remove('open');
       WidgetConfigModal.open('filter');
+    });
+
+    document.getElementById('menuAddTopFilterBar')?.addEventListener('click', () => {
+      addElementsDropdown?.classList.remove('open');
+      const curTab = DashboardState.present.activeTabId || 'default';
+      const cfg = TopFilterBarManager.getConfig(curTab);
+      if (cfg.enabled) {
+        showToast('ℹ️ Thanh Bộ Lọc Tổng Hợp đã được bật trên Tab này rồi!', 'info');
+        return;
+      }
+      DashboardState.pushSnapshot();
+      TopFilterBarManager.saveConfig({
+        enabled: true,
+        isSticky: true,
+        isCollapsed: false,
+        pos: { x: 24, y: 24, w: 1312 }
+      }, curTab);
+      DashboardState.isDirty = true;
+      renderCanvas();
+      triggerDebouncedAutoSave();
+      showToast('✓ Đã thêm Thanh Bộ Lọc Tổng Hợp vào Tab này!', 'success');
     });
 
     document.getElementById('menuAddHeading')?.addEventListener('click', () => {
@@ -11244,10 +13154,8 @@ ${expectedOutput}
       DashboardState.pushSnapshot();
       const newId = 'tab_' + Date.now();
       DashboardState.present.tabs.push({ id: newId, name: name });
-      DashboardState.present.activeTabId = newId;
+      switchDashboardTab(newId);
       DashboardState.isDirty = true;
-      renderAllTabs();
-      renderCanvas();
       triggerDebouncedAutoSave();
     });
 
@@ -11337,13 +13245,79 @@ ${expectedOutput}
       e.stopPropagation();
       widgetDropdown?.classList.toggle('open');
     });
-    window.addEventListener('click', () => {
+    window.addEventListener('click', (e) => {
       widgetDropdown?.classList.remove('open');
+      if (!e.target.closest('.db-filter-multiselect-dropdown') && !e.target.closest('.db-filter-multiselect-btn')) {
+        DashboardState._openDropdownFilterId = null;
+        document.querySelectorAll('.db-filter-multiselect-dropdown.open').forEach(d => {
+          d.classList.remove('open');
+          const pBox = d.closest('.db-item-box') || d.closest('.db-top-filter-item-wrapper');
+          if (pBox) {
+            pBox.classList.remove('dropdown-open');
+            if (pBox.dataset.originalZIndex !== undefined) {
+              pBox.style.zIndex = pBox.dataset.originalZIndex;
+            } else {
+              pBox.style.zIndex = '';
+            }
+          }
+          const tb = d.closest('.db-top-filter-bar');
+          if (tb) {
+            tb.classList.remove('dropdown-open');
+            if (tb.dataset.originalZIndex !== undefined) {
+              tb.style.zIndex = tb.dataset.originalZIndex;
+            } else {
+              tb.style.zIndex = '';
+            }
+          }
+        });
+      }
+    });
+
+    // Lắng nghe sự kiện cuộn trang (Window, Document và Canvas Wrapper) để ghim thanh Bộ Lọc Tổng Hợp ở đỉnh trình duyệt khi xem trước
+    let isTickingSticky = false;
+    const handleScrollSticky = () => {
+      if (!isTickingSticky) {
+        window.requestAnimationFrame(() => {
+          updateTopFilterBarStickyPosition();
+          isTickingSticky = false;
+        });
+        isTickingSticky = true;
+      }
+    };
+    window.addEventListener('scroll', handleScrollSticky, { passive: true });
+    document.addEventListener('scroll', handleScrollSticky, { passive: true });
+    const canvasWrapperEl = document.getElementById('canvasWrapper');
+    if (canvasWrapperEl) {
+      canvasWrapperEl.addEventListener('scroll', handleScrollSticky, { passive: true });
+    }
+    window.addEventListener('resize', () => {
+      updateCanvasTransform();
+      updateTopFilterBarStickyPosition();
     });
 
     document.getElementById('menuAddFilter')?.addEventListener('click', () => {
       widgetDropdown?.classList.remove('open');
       WidgetConfigModal.open('filter');
+    });
+    document.getElementById('menuAddTopFilterBar')?.addEventListener('click', () => {
+      widgetDropdown?.classList.remove('open');
+      const curTab = DashboardState.present.activeTabId || 'default';
+      const cfg = TopFilterBarManager.getConfig(curTab);
+      if (cfg.enabled) {
+        showToast('ℹ️ Thanh Bộ Lọc Tổng Hợp đã được bật trên Tab này rồi!', 'info');
+        return;
+      }
+      DashboardState.pushSnapshot();
+      TopFilterBarManager.saveConfig({
+        enabled: true,
+        isSticky: true,
+        isCollapsed: false,
+        pos: { x: 24, y: 24, w: 1312 }
+      }, curTab);
+      DashboardState.isDirty = true;
+      renderCanvas();
+      triggerDebouncedAutoSave();
+      showToast('✓ Đã thêm Thanh Bộ Lọc Tổng Hợp vào Tab này!', 'success');
     });
     document.getElementById('menuAddHeading')?.addEventListener('click', () => {
       widgetDropdown?.classList.remove('open');
@@ -11523,6 +13497,12 @@ ${expectedOutput}
           renderCanvas();
           triggerDebouncedAutoSave();
           showToast('Đã đưa widget xuống dưới', 'info');
+        }
+      } else if (action === 'pin-top') {
+        const item = DashboardState.present.items.find(i => i.id === itemId);
+        if (item) {
+          pinFilterToTopBar(item);
+          triggerDebouncedAutoSave();
         }
       } else if (action === 'duplicate') {
         syncItemPositionsFromDOM();
@@ -11757,8 +13737,9 @@ ${expectedOutput}
   // ===========================================================================
   function bootstrapDefaultWorkspace() {
     document.documentElement.setAttribute('data-theme', 'light');
-    DashboardState.present.theme.themeMode = 'light';
-    applyCanvasBackgroundUI(DashboardState.present.theme?.canvasBg || 'dots');
+    const initialBg = (typeof localStorage !== 'undefined' && localStorage.getItem('mb_dashboard_canvas_bg')) || DashboardState.present.theme?.canvasBg || 'dots';
+    DashboardState.present.theme.canvasBg = initialBg;
+    applyCanvasBackgroundUI(initialBg);
     DataStore.initDefault();
     updateDataSourcesSummary();
 

@@ -234,6 +234,10 @@
             <span class="fft-item-icon">🔍</span>
             <span class="fft-item-text">Bộ Lọc (Filter)</span>
           </button>
+          <button class="db-dropdown-item" id="menuAddTopFilterBar" title="Thêm Thanh / Khung Bộ Lọc Tổng Hợp (có thể kéo di chuyển hoặc ghim cố định dưới thanh tab)">
+            <span class="fft-item-icon">📌</span>
+            <span class="fft-item-text">Thanh Bộ Lọc Tổng Hợp</span>
+          </button>
 
           <!-- Nhóm 2: Văn bản & Tiêu đề -->
           <div class="db-menu-header">Văn Bản &amp; Tiêu Đề</div>
@@ -304,7 +308,7 @@
 
       <!-- Đổi Kiểu Nền Canvas Dropdown -->
       <div class="db-dropdown" id="dropdownCanvasBg">
-        <button class="db-btn-tool fft-btn-bg" id="btnCanvasBgTrigger" title="Đổi kiểu nền Dashboard (Trắng trơn, Chấm bi, Dọc kẻ, Lưới ô vuông)">
+        <button class="db-btn-tool fft-btn-bg" id="btnCanvasBgTrigger" title="Đổi kiểu nền Dashboard (Trắng trơn, Chấm bi, Dọc kẻ, Kẻ ngang, Lưới ô vuông)">
           🎨 Nền ▾
         </button>
         <div class="db-dropdown-menu fft-compact-dropdown" style="min-width:150px;max-width:170px;">
@@ -319,6 +323,10 @@
           <button class="db-dropdown-item" data-bg-type="stripes" title="Đường kẻ sọc thẳng đứng">
             <span class="db-bg-preview-swatch swatch-stripes"></span>
             <span class="fft-item-text">Dọc Kẻ</span>
+          </button>
+          <button class="db-dropdown-item" data-bg-type="horizontal" title="Đường kẻ ngang thanh lịch">
+            <span class="db-bg-preview-swatch swatch-horizontal"></span>
+            <span class="fft-item-text">Kẻ Ngang</span>
           </button>
           <button class="db-dropdown-item" data-bg-type="grid" title="Lưới caro kỹ thuật chuẩn">
             <span class="db-bg-preview-swatch swatch-grid"></span>
@@ -504,6 +512,14 @@
               <span>Bộ Lọc Dữ Liệu</span>
             </span>
             <span style="font-size:10px;padding:2px 6px;background:rgba(2,132,199,0.1);color:#0284c7;border-radius:4px;font-weight:700;">Interactive</span>
+          </div>
+
+          <div class="fps-field">
+            <label class="fps-sub-label">Nguồn Dữ Liệu &amp; Sheet:</label>
+            <div style="position:relative;">
+              <select class="fps-select" id="fpsFilterSourceSelect" style="padding-left:28px;"></select>
+              <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;pointer-events:none;">📑</span>
+            </div>
           </div>
 
           <div class="fps-field">
@@ -1324,15 +1340,15 @@
        7. WIDGET CONFIGURATION MODAL (FILTER, KPI, HEADING, FRAME)
        ==================================================================== -->
   <div class="db-simple-modal" id="widgetConfigModal">
-    <div class="db-simple-box" style="max-width:540px;">
-      <div class="ce-header">
+    <div class="db-simple-box" style="max-width:540px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div class="ce-header" style="flex-shrink:0;">
         <span style="font-weight:700;font-size:15px;color:#fff;" id="widgetModalTitle">Cấu Hình Widget</span>
         <button class="db-btn-tool" id="btnCloseWidgetModal">✕</button>
       </div>
-      <div style="padding:20px;display:flex;flex-direction:column;gap:14px;" id="widgetModalBody">
+      <div style="padding:20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;flex:1 1 auto;max-height:calc(90vh - 120px);" id="widgetModalBody">
         <!-- Rendered dynamically for Filter, KPI, Heading, Frame -->
       </div>
-      <div class="ce-header" style="justify-content:flex-end;border-top:1px solid var(--db-card-border);background:transparent;">
+      <div class="ce-header" style="justify-content:flex-end;border-top:1px solid var(--db-card-border);background:transparent;flex-shrink:0;">
         <button class="db-btn-tool" id="btnCancelWidgetModal">Hủy</button>
         <button class="db-btn-tool save-btn" id="btnSaveWidgetModal">💾 Lưu Widget</button>
       </div>
