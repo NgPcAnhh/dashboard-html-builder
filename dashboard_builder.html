@@ -230,6 +230,10 @@
             <span class="fft-item-icon">📊</span>
             <span class="fft-item-text">Biểu Đồ (ECharts)</span>
           </button>
+          <button class="db-dropdown-item" id="menuAddTable" title="Thêm Bảng dữ liệu HTML tối ưu (Cấu hình chuẩn Apache Superset, không gây nặng trình duyệt)">
+            <span class="fft-item-icon">📋</span>
+            <span class="fft-item-text">Bảng Dữ Liệu (Superset Table)</span>
+          </button>
           <button class="db-dropdown-item" id="menuAddFilter" title="Dropdown bộ lọc động theo cột Excel cho Dashboard">
             <span class="fft-item-icon">🔍</span>
             <span class="fft-item-text">Bộ Lọc (Filter)</span>
@@ -453,6 +457,26 @@
           <div style="margin-top:12px;">
             <button type="button" class="fps-action-btn" id="fpsBtnOpenChartStudio" style="background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;">
               🛠️ Mở Code Studio (Sửa Code JS &amp; Data)
+            </button>
+          </div>
+        </div>
+
+        <!-- A2. CẤU HÌNH BẢNG DỮ LIỆU SUPERSET (TABLE) -->
+        <div class="fps-section" id="fpsSectionTable" style="display:none;">
+          <div class="fps-section-title">
+            <span>📋 Cấu Hình Bảng Dữ Liệu</span>
+          </div>
+          <div class="fps-field">
+            <label class="fps-sub-label">Nguồn dữ liệu (File &amp; Sheet):</label>
+            <select class="fps-select" id="fpsTableSourceSelect"></select>
+          </div>
+          <div class="fps-field" style="margin-top:8px;">
+            <label class="fps-sub-label">Chế độ truy vấn (Query Mode):</label>
+            <div id="fpsTableModeBadge" style="font-size:12px;font-weight:600;color:#0284c7;background:#e0f2fe;padding:4px 8px;border-radius:6px;display:inline-block;">Bản ghi chi tiết</div>
+          </div>
+          <div style="margin-top:12px;">
+            <button type="button" class="fps-action-btn" id="fpsBtnOpenTableStudio" style="background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;width:100%;">
+              🛠️ Mở Table Studio (Cấu Hình Bảng Superset)
             </button>
           </div>
         </div>
@@ -1294,6 +1318,7 @@
             <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ bánh Donut tỷ trọng % có góc bo mềm mại">🍩 Bánh Donut %</button>
             <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ hỗn hợp Cột (Doanh thu) và Đường (Tỷ suất lợi nhuận %) 2 trục Y">📶 Cột &amp; Đường Đôi</button>
             <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ tương tác đa chiều có nút bấm chuyển đổi Khu Vực / Danh Mục / Kênh Bán">🎛️ Dashboard Đa Nút</button>
+            <button type="button" class="btn-viz ai-type-chip" data-type="Biểu đồ có hiệu ứng click tương tác, click vào phần tử để kích hoạt lọc chéo toàn bộ Dashboard (setFilter) hoặc drill-down, code có chú thích đầy đủ từng bước">🎯 Click Tương Tác &amp; Lọc Chéo</button>
           </div>
           <textarea id="aiExpectedOutput" style="height: 45px; background: #131b2e; border: 1px solid rgba(255,255,255,0.12); border-radius: 5px; color: #f1f5f9; padding: 6px 10px; font-size: 11.5px; resize: vertical;"
             placeholder="Ví dụ: Xuất biểu đồ có tiêu đề rõ ràng, đơn vị tiền VNĐ, tooltip chi tiết, toolbox tải ảnh, nền trắng, màu sắc xanh dương và xanh lá hiện đại..."></textarea>

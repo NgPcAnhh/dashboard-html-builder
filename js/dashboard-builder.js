@@ -470,8 +470,52 @@
 
     getAvailableSources() {
       const list = [];
+      const fileNames = Object.keys(this.files);
+      let totalAllRows = 0;
+      let totalSheetsCount = 0;
+
       for (const fileName in this.files) {
         const fileObj = this.files[fileName];
+        for (const sheetName in fileObj.sheets) {
+          const sheet = fileObj.sheets[sheetName];
+          totalAllRows += sheet ? (sheet.length !== undefined ? sheet.length : (sheet.rowCount || 0)) : 0;
+          totalSheetsCount++;
+        }
+      }
+
+      // Tùy chọn 1: Tất Cả Các File Đã Nạp
+      if (fileNames.length > 0) {
+        list.push({
+          fileName: '__ALL_FILES__',
+          sheetName: '',
+          key: '__ALL_FILES__',
+          label: `🌐 Tất Cả Các File Đã Nạp (${fileNames.length} file, ${totalSheetsCount} sheet, ${totalAllRows.toLocaleString('vi-VN')} dòng)`,
+          type: 'all_files'
+        });
+      }
+
+      // Tùy chọn 2: Từng File (Tất Cả Sheet) & Tùy chọn 3: Từng Sheet riêng
+      for (const fileName in this.files) {
+        const fileObj = this.files[fileName];
+        const sheetNames = Object.keys(fileObj.sheets || {});
+        let totalFileRows = 0;
+        sheetNames.forEach(sName => {
+          const sheet = fileObj.sheets[sName];
+          totalFileRows += sheet ? (sheet.length !== undefined ? sheet.length : (sheet.rowCount || 0)) : 0;
+        });
+
+        // Nếu file có từ 2 sheet trở lên (hoặc bất kỳ file nào), thêm tùy chọn Tất Cả Sheet của File
+        if (sheetNames.length > 1) {
+          list.push({
+            fileName,
+            sheetName: '__ALL_SHEETS__',
+            key: `${fileName}::__ALL_SHEETS__`,
+            label: `📚 ${fileName} » Tất Cả Các Sheet (${sheetNames.length} sheet, ${totalFileRows.toLocaleString('vi-VN')} dòng)`,
+            type: 'all_sheets'
+          });
+        }
+
+        // Từng sheet đơn lẻ
         for (const sheetName in fileObj.sheets) {
           const sheet = fileObj.sheets[sheetName];
           const count = sheet ? (sheet.length !== undefined ? sheet.length : (sheet.rowCount || 0)) : 0;
@@ -479,7 +523,8 @@
             fileName,
             sheetName,
             key: `${fileName}::${sheetName}`,
-            label: `${fileName} » ${sheetName} (${count.toLocaleString('vi-VN')} dòng)`
+            label: `📄 ${fileName} » ${sheetName} (${count.toLocaleString('vi-VN')} dòng)`,
+            type: 'sheet'
           });
         }
       }
@@ -490,6 +535,7 @@
       if (!fileKey && fallbackCol) {
         const sources = this.getAvailableSources();
         const found = sources.find(s => {
+          if (s.key === '__ALL_FILES__' || s.key.endsWith('::__ALL_SHEETS__')) return false;
           const raw = (this.files[s.fileName]?.sheets?.[s.sheetName]);
           if (!raw) return false;
           if (raw.__columns && raw.__columns.includes(fallbackCol)) return true;
@@ -504,6 +550,41 @@
       }
       if (!fileKey) return [];
 
+      // Trường hợp 0: Tất Cả Các File Đã Nạp
+      if (fileKey === '__ALL_FILES__') {
+        const combined = [];
+        for (const fn in this.files) {
+          const fileObj = this.files[fn];
+          for (const sn in fileObj.sheets) {
+            const raw = this.uncompactRows(fileObj.sheets[sn]);
+            if (Array.isArray(raw)) {
+              for (let i = 0; i < raw.length; i++) {
+                combined.push(raw[i]);
+              }
+            }
+          }
+        }
+        return combined;
+      }
+
+      // Trường hợp 0.5: Tất Cả Các Sheet của 1 file cụ thể
+      if (String(fileKey).endsWith('::__ALL_SHEETS__')) {
+        const fn = String(fileKey).replace('::__ALL_SHEETS__', '');
+        const fileObj = this.files[fn];
+        if (fileObj && fileObj.sheets) {
+          const combined = [];
+          for (const sn in fileObj.sheets) {
+            const raw = this.uncompactRows(fileObj.sheets[sn]);
+            if (Array.isArray(raw)) {
+              for (let i = 0; i < raw.length; i++) {
+                combined.push(raw[i]);
+              }
+            }
+          }
+          return combined;
+        }
+      }
+
       const parts = String(fileKey).split('::');
       const fileName = parts[0];
       const sheetName = parts[1];
@@ -515,7 +596,7 @@
           this.files[fileName].sheets[sheetName] = ParquetEngine.createVirtualArray(rawSheet);
           return this.files[fileName].sheets[sheetName];
         }
-        return rawSheet;
+        return this.uncompactRows(rawSheet);
       }
 
       // Trường hợp 2: fileKey chỉ là fileName (lấy sheet đầu tiên)
@@ -527,7 +608,7 @@
             this.files[fileName].sheets[sKeys[0]] = ParquetEngine.createVirtualArray(rawSheet);
             return this.files[fileName].sheets[sKeys[0]];
           }
-          return rawSheet;
+          return this.uncompactRows(rawSheet);
         }
       }
 
@@ -539,7 +620,7 @@
             this.files[fn].sheets[fileKey] = ParquetEngine.createVirtualArray(rawSheet);
             return this.files[fn].sheets[fileKey];
           }
-          return rawSheet;
+          return this.uncompactRows(rawSheet);
         }
       }
 
@@ -608,6 +689,35 @@
     },
 
     getColumns(fileKey) {
+      if (fileKey === '__ALL_FILES__') {
+        const colSet = new Set();
+        for (const fn in this.files) {
+          const fileObj = this.files[fn];
+          for (const sn in fileObj.sheets) {
+            const raw = this.uncompactRows(fileObj.sheets[sn]);
+            if (raw && raw.length > 0 && raw[0]) {
+              Object.keys(raw[0]).forEach(c => colSet.add(c));
+            }
+          }
+        }
+        return Array.from(colSet);
+      }
+
+      if (String(fileKey).endsWith('::__ALL_SHEETS__')) {
+        const fn = String(fileKey).replace('::__ALL_SHEETS__', '');
+        const fileObj = this.files[fn];
+        if (fileObj && fileObj.sheets) {
+          const colSet = new Set();
+          for (const sn in fileObj.sheets) {
+            const raw = this.uncompactRows(fileObj.sheets[sn]);
+            if (raw && raw.length > 0 && raw[0]) {
+              Object.keys(raw[0]).forEach(c => colSet.add(c));
+            }
+          }
+          return Array.from(colSet);
+        }
+      }
+
       const rows = this.getData(fileKey);
       if (!rows || rows.length === 0) return [];
       if (rows.__columns) return rows.__columns;
@@ -2228,6 +2338,99 @@ const option = {
 };
 
 return option;`;
+    },
+
+    interactive_html_overlay(sourceKey = null) {
+      const cols = this._getCols(sourceKey);
+      const catCol = cols.includes('Tháng') ? 'Tháng' : (cols[1] || cols[0] || 'Danh Mục');
+      const m1 = cols.includes('Doanh Thu') ? 'Doanh Thu' : (cols[3] || 'Doanh Thu');
+      const m2 = cols.includes('Lợi Nhuận') ? 'Lợi Nhuận' : (cols[4] || 'Lợi Nhuận');
+
+      return `// 💡 TẠO NÚT BẤM / PHÍM CHỨC NĂNG BẰNG HTML/CSS/JS (DOM OVERLAY)
+// Cho phép dựng giao diện nút bấm HTML/CSS tùy biến hoàn toàn (nút bấm, badge, dropdown) đặt nổi trên biểu đồ!
+
+const categories = data.map(r => r['${catCol}']);
+const val1 = data.map(r => Number(r['${m1}']) || 0);
+const val2 = data.map(r => Number(r['${m2}']) || 0);
+
+let activeMetric = '${m1}';
+let chartType = 'bar';
+
+// 1. Tạo hoặc cập nhật thanh công cụ HTML/CSS nổi trên mặt biểu đồ
+const chartDom = myChart.getDom();
+if (chartDom) {
+  chartDom.style.position = 'relative';
+
+  // Xóa overlay cũ nếu có (tránh trùng lặp khi re-render hoặc cross-filter)
+  const oldControls = chartDom.querySelector('.chart-html-controls-overlay');
+  if (oldControls) oldControls.remove();
+
+  const controls = document.createElement('div');
+  controls.className = 'chart-html-controls-overlay';
+  controls.style.cssText = 'position:absolute;top:8px;right:12px;z-index:10;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.92);backdrop-filter:blur(8px);border:1px solid #cbd5e1;border-radius:8px;padding:4px 6px;box-shadow:0 2px 8px rgba(0,0,0,0.06);';
+
+  controls.innerHTML = '<button class="html-cbtn btn-m1" style="border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;background:#0284c7;color:#fff;">📊 ' + '${m1}' + '</button>' +
+    '<button class="html-cbtn btn-m2" style="border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;background:#f1f5f9;color:#334155;">💰 ' + '${m2}' + '</button>' +
+    '<button class="html-cbtn btn-toggle" style="border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;background:#fff;color:#0f172a;">📈 Đổi Cột/Đường</button>';
+
+  // Gán sự kiện JS tương tác trực tiếp với myChart
+  const btn1 = controls.querySelector('.btn-m1');
+  const btn2 = controls.querySelector('.btn-m2');
+  const btnToggle = controls.querySelector('.btn-toggle');
+
+  btn1.onclick = () => {
+    activeMetric = '${m1}';
+    btn1.style.background = '#0284c7'; btn1.style.color = '#fff';
+    btn2.style.background = '#f1f5f9'; btn2.style.color = '#334155';
+    myChart.setOption({
+      title: { text: 'Phân Tích: ' + activeMetric },
+      series: [{ name: activeMetric, type: chartType, data: val1, itemStyle: { color: '#0284c7' } }]
+    });
+  };
+
+  btn2.onclick = () => {
+    activeMetric = '${m2}';
+    btn2.style.background = '#10b981'; btn2.style.color = '#fff';
+    btn1.style.background = '#f1f5f9'; btn1.style.color = '#334155';
+    myChart.setOption({
+      title: { text: 'Phân Tích: ' + activeMetric },
+      series: [{ name: activeMetric, type: chartType, data: val2, itemStyle: { color: '#10b981' } }]
+    });
+  };
+
+  btnToggle.onclick = () => {
+    chartType = chartType === 'bar' ? 'line' : 'bar';
+    const curData = activeMetric === '${m1}' ? val1 : val2;
+    const curColor = activeMetric === '${m1}' ? '#0284c7' : '#10b981';
+    myChart.setOption({
+      series: [{ type: chartType, smooth: true, data: curData, itemStyle: { color: curColor }, lineStyle: { width: 3 } }]
+    });
+  };
+
+  chartDom.appendChild(controls);
+}
+
+// 2. Cấu hình Option ECharts
+return {
+  title: {
+    text: 'Phân Tích: ' + activeMetric,
+    subtext: 'Bấm các nút HTML/CSS overlay trên góc phải để tương tác',
+    textStyle: { color: '#0f172a', fontSize: 13, fontWeight: 700 },
+    subtextStyle: { color: '#64748b', fontSize: 11 }
+  },
+  tooltip: { trigger: 'axis', valueFormatter: v => new Intl.NumberFormat('vi-VN').format(v) },
+  grid: { left: '4%', right: '4%', bottom: '10%', top: '22%', containLabel: true },
+  xAxis: { type: 'category', data: categories, axisLabel: { color: '#64748b' } },
+  yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } }, axisLabel: { color: '#64748b' } },
+  series: [
+    {
+      name: activeMetric,
+      type: chartType,
+      data: val1,
+      itemStyle: { color: '#0284c7', borderRadius: [4, 4, 0, 0] }
+    }
+  ]
+};`;
     }
   };
 
@@ -2235,6 +2438,14 @@ return option;`;
   // 5. CHART CODE STUDIO MODAL (CHUẨN 100% GIAO DIỆN ECHARTS VISUALIZER)
   // ===========================================================================
   const CORPORATE_CHART_PRESETS = [
+    {
+      id: 'interactive-html-overlay',
+      name: 'Biểu Đồ Phím Bấm HTML/CSS/JS (DOM Overlay)',
+      icon: '🎛️',
+      category: 'Tương Tác Nâng Cao',
+      desc: 'Tạo thanh nút bấm HTML/CSS thực tế nổi trên góc biểu đồ, gán JS onclick tương tác gọi myChart.setOption tùy biến tự do.',
+      generator: () => ChartTemplates.interactive_html_overlay()
+    },
     {
       id: 'interactive-buttons',
       name: 'Biểu Đồ Tương Tác Phím Chức Năng (Graphic Buttons)',
@@ -2999,24 +3210,72 @@ return option;`;
 BẠN LÀ CHUYÊN GIA SENIOR DATA VISUALIZATION VÀ LẬP TRÌNH APACHE ECHARTS 5 JAVASCRIPT.
 HÃY VIẾT DUY NHẤT MÃ JAVASCRIPT CHUẨN XÁC ĐỂ XỬ LÝ DỮ LIỆU EXCEL VÀ RETURN VỀ OBJECT OPTION ECHARTS.
 
+---
 1. THÔNG TIN DỮ LIỆU ĐẦU VÀO:
 - ${schemaDesc}
 ${inputExtra ? `- Ghi chú bổ sung: ${inputExtra}` : ''}
 
+---
 2. YÊU CẦU NGHIỆP VỤ & TỔNG HỢP:
 ${bizLogic}
 
+---
 3. KIỂU BIỂU ĐỒ & KẾT QUẢ ĐẦU RA MONG MUỐN:
 ${expectedOutput}
 
-4. NGUYÊN TẮC BẮT BUỘC (CRITICAL CONTRACT):
-- Chỉ dùng JavaScript thuần chạy trên trình duyệt.
-- Dữ liệu đã có sẵn trong biến toàn cục 'data' (mảng các object của sheet).
-- Trích xuất dữ liệu: const categories = data.map(r => r['Tên Cột X']);
-- Luôn ép kiểu số an toàn: Number(r['Tên Cột Y']) || 0.
-- Nếu cần lấy sheet khác: const rows = getSheet('TênSheetKhác');
-- Kết thúc mã code bằng lệnh: return { ...cấu hình option ECharts... };
-- KHÔNG bọc mã trong hàm không trả về, KHÔNG giải thích, KHÔNG viết văn bản chào hỏi.`;
+---
+4. BẮT BUỘC COMMENT ĐẦY ĐỦ ĐỂ DỄ BẢO TRÌ (CODE MAINTENANCE & CLEAN CODE):
+- Mã nguồn BẮT BUỘC phải có comment tiếng Việt chi tiết, rõ ràng từng phân đoạn chức năng:
+  * // ==========================================
+  * // 1. TRÍCH XUẤT VÀ LÀM SẠCH DỮ LIỆU ĐẦU VÀO: Chú thích việc đọc từ biến 'data', kiểm tra null/undefined, ép kiểu Number an toàn.
+  * // 2. GOM NHÓM (AGGREGATE) & TÍNH TOÁN NGHIỆP VỤ: Chú thích rõ công thức (SUM, AVG, COUNT, tỷ lệ %), logic Map/Reduce, sắp xếp Top.
+  * // 3. THIẾT LẬP CẤU HÌNH OPTION ECHARTS: Chú thích màu sắc gradient, tooltip format tiền tệ VNĐ/%, trục X/Y, bo góc cột, toolbox.
+  * // 4. HIỆU ỨNG TƯƠNG TÁC CLICK & LỌC CHÉO (NẾU CÓ): Chú thích rõ cách bắt sự kiện click, hủy lọc khi click lại, chống double event.
+- Đặt tên biến tường minh, phản ánh đúng ý nghĩa nghiệp vụ (ví dụ: totalRevenue, salesByCategory, topBranches, categories), TUYỆT ĐỐI KHÔNG dùng tên tắt khó hiểu (a, b, t1, x).
+
+---
+5. QUY CHUẨN HIỆU ỨNG CLICK TƯƠNG TÁC TRÊN BIỂU ĐỒ (CHART CLICK & CROSS-FILTERING):
+Khi biểu đồ có yêu cầu tương tác click hoặc lọc chéo dữ liệu, BẮT BUỘC tuân thủ các quy tắc sau:
+- Click vào phần tử dữ liệu (Cột, Lát bánh Pie, Điểm đường Line, Thanh ngang...):
+  * Dùng cú pháp:
+    \`\`\`javascript
+    // Chống nhân bản sự kiện (double firing) khi biểu đồ render lại hoặc khi lọc dữ liệu
+    if (myChart && myChart.off) {
+      myChart.off('click');
+      myChart.on('click', function(params) {
+        // params.name: nhãn danh mục (vd: "Hà Nội", "Miền Bắc", "Tháng 05")
+        // params.value: giá trị số liệu của phần tử
+        // params.seriesName: tên chuỗi dữ liệu
+        // params.dataIndex: chỉ số vị trí dữ liệu
+        
+        // 1. Tương tác lọc chéo Dashboard (Cross-filtering qua biến setFilter có sẵn trong scope):
+        if (typeof setFilter === 'function') {
+          // Hỗ trợ toggle: nếu đang lọc đúng giá trị này thì click lại sẽ hủy lọc (set null)
+          if (context && context.activeFilters && context.activeFilters['TÊN_CỘT_LỌC'] === params.name) {
+            setFilter('TÊN_CỘT_LỌC', null); // Hủy lọc
+          } else {
+            setFilter('TÊN_CỘT_LỌC', params.name); // Áp dụng lọc chéo
+          }
+        }
+      });
+    }
+    \`\`\`
+- Hiệu ứng thị giác khi di chuột & click (Visual Feedback):
+  * Đặt con trỏ chuột dạng bàn tay: Thêm \`cursor: 'pointer'\` trong cấu hình series hoặc \`myChart.getZr().setCursorStyle('pointer')\`.
+  * Highlight phần tử đang chọn: Có thể dùng \`selectedMode: 'single'\` trên series, hoặc gọi \`myChart.dispatchAction({ type: 'highlight', seriesIndex: params.seriesIndex, dataIndex: params.dataIndex })\`.
+- Tạo nút chức năng (Buttons) trên biểu đồ:
+  * Dùng mảng \`graphic: [...] \` của ECharts với \`type: 'group'\`, bên trong có \`rect\` (nền nút) và \`text\` (chữ), gắn \`cursor: 'pointer'\` và sự kiện \`onclick: function() { ... }\` để chuyển đổi kiểu biểu đồ (Bar/Line) hoặc reset bộ lọc.
+  * Hoặc dùng HTML DOM Overlay qua \`const dom = myChart.getDom();\` chèn thẻ button HTML thật có class CSS nổi góc trên.
+
+---
+6. NGUYÊN TẮC KỸ THUẬT BẮT BUỘC (CRITICAL CONTRACT):
+- Chỉ dùng JavaScript thuần chạy trực tiếp trên trình duyệt qua new Function.
+- Dữ liệu đã có sẵn trong biến toàn cục 'data' (Mảng các JSON Object).
+- BẮT BUỘC truy cập cột bằng ngoặc vuông: row["Tên Cột"] (KHÔNG dùng row.Tên Cột vì tên cột có thể có khoảng trắng hoặc dấu tiếng Việt).
+- Luôn ép kiểu số an toàn: const parseNum = v => typeof v === 'number' ? (isNaN(v) ? 0 : v) : parseFloat(String(v || '').replace(/[^0-9.-]/g, '')) || 0;
+- Nếu cần truy cập sheet khác: const rows = getSheet('Tên_Sheet_Khác');
+- Kết thúc mã code bằng lệnh: return option; (hoặc myChart.setOption(option); return option;).
+- CHỈ TRẢ VỀ DUY NHẤT một khối mã JavaScript trong \`\`\`javascript ... \`\`\`, KHÔNG viết văn bản chào hỏi, cảm ơn hay giải thích dài dòng bên ngoài khối mã.`;
 
       const out = document.getElementById('aiPromptOutput');
       if (out) out.value = promptText;
@@ -3192,6 +3451,421 @@ ${expectedOutput}
     updatePreview();
   }
 
+  // ===========================================================================
+  // SUPERSET TABLE ENGINE (HTML/CSS/JS NATIVE HIGH-PERFORMANCE TABLE)
+  // ===========================================================================
+  function exportSupersetTable(item, rows, cols) {
+    const rawName = (item.name || 'bang_du_lieu').replace(/[^a-zA-Z0-9_À-ỹ]/g, '_');
+    const fileName = `${rawName}_${new Date().toISOString().slice(0, 10)}`;
+
+    const exportData = rows.map(r => {
+      const obj = {};
+      cols.forEach(c => {
+        obj[c] = r[c] !== undefined && r[c] !== null ? r[c] : '';
+      });
+      return obj;
+    });
+
+    if (typeof XLSX !== 'undefined' && XLSX.utils && XLSX.writeFile) {
+      try {
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Data");
+        XLSX.writeFile(wb, `${fileName}.xlsx`);
+        if (typeof showToast === 'function') showToast('✓ Đã xuất bảng dữ liệu ra file Excel (.xlsx)!', 'success');
+        return;
+      } catch (err) {
+        console.warn('XLSX export failed, fallback to CSV:', err);
+      }
+    }
+
+    // Fallback to CSV with UTF-8 BOM
+    let csv = '\uFEFF';
+    csv += cols.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',') + '\r\n';
+    exportData.forEach(r => {
+      csv += cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(',') + '\r\n';
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fileName}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    if (typeof showToast === 'function') showToast('✓ Đã xuất bảng dữ liệu ra file CSV!', 'success');
+  }
+
+  function renderSupersetTable(item, containerEl) {
+    if (!containerEl) return;
+    containerEl.innerHTML = '';
+
+    const tabId = item.tabId || DashboardState?.present?.activeTabId || 'default';
+    const rawData = typeof getFilteredData === 'function' ? getFilteredData(item.dataSourceKey, [], tabId) : [];
+
+    if (!rawData || rawData.length === 0) {
+      containerEl.innerHTML = `
+        <div class="db-table-empty">
+          <div style="font-size:24px;margin-bottom:6px;">📋</div>
+          <div>Không có dữ liệu hiển thị</div>
+          <div style="font-size:11px;color:var(--db-text-sub);margin-top:4px;">Vui lòng kiểm tra file nguồn hoặc nới lỏng bộ lọc dữ liệu.</div>
+        </div>
+      `;
+      return;
+    }
+
+    // 1. Process data according to Query Mode: 'raw' or 'aggregate'
+    const queryMode = item.queryMode || 'raw';
+    let displayCols = [];
+    let finalRows = [];
+
+    if (queryMode === 'aggregate') {
+      const groupCols = Array.isArray(item.groupByCols) && item.groupByCols.length > 0
+        ? item.groupByCols
+        : [Object.keys(rawData[0] || {})[0] || 'Nhóm'];
+
+      const metrics = Array.isArray(item.metrics) && item.metrics.length > 0
+        ? item.metrics
+        : [{ col: Object.keys(rawData[0] || {})[1] || 'Doanh Thu', agg: 'sum', label: `Tổng ${Object.keys(rawData[0] || {})[1] || 'Doanh Thu'}` }];
+
+      displayCols = [...groupCols];
+      metrics.forEach(m => {
+        const mLabel = m.label || `${m.agg.toUpperCase()}(${m.col})`;
+        displayCols.push(mLabel);
+      });
+
+      const groupsMap = new Map();
+      for (let i = 0; i < rawData.length; i++) {
+        const row = rawData[i];
+        const gKey = groupCols.map(c => String(row[c] ?? '')).join('___:::___');
+        let g = groupsMap.get(gKey);
+        if (!g) {
+          g = { _keys: groupCols.map(c => row[c]), _rows: [] };
+          groupsMap.set(gKey, g);
+        }
+        g._rows.push(row);
+      }
+
+      for (const [_, g] of groupsMap.entries()) {
+        const outRow = {};
+        groupCols.forEach((c, idx) => {
+          outRow[c] = g._keys[idx];
+        });
+        metrics.forEach(m => {
+          const mLabel = m.label || `${m.agg.toUpperCase()}(${m.col})`;
+          const numVals = g._rows.map(r => Number(r[m.col])).filter(n => !isNaN(n));
+          let val = 0;
+          if (m.agg === 'sum') {
+            val = numVals.reduce((a, b) => a + b, 0);
+          } else if (m.agg === 'avg') {
+            val = numVals.length > 0 ? (numVals.reduce((a, b) => a + b, 0) / numVals.length) : 0;
+          } else if (m.agg === 'count') {
+            val = g._rows.length;
+          } else if (m.agg === 'min') {
+            val = numVals.length > 0 ? Math.min(...numVals) : 0;
+          } else if (m.agg === 'max') {
+            val = numVals.length > 0 ? Math.max(...numVals) : 0;
+          } else if (m.agg === 'count_distinct') {
+            val = new Set(g._rows.map(r => r[m.col])).size;
+          }
+          outRow[mLabel] = val;
+        });
+        finalRows.push(outRow);
+      }
+    } else {
+      // Raw Records mode
+      displayCols = Array.isArray(item.columns) && item.columns.length > 0
+        ? [...item.columns]
+        : Object.keys(rawData[0] || {});
+
+      const limit = Number(item.rowLimit) || 0;
+      finalRows = limit > 0 ? rawData.slice(0, limit) : [...rawData];
+    }
+
+    // 2. Identify numeric columns & compute max values for Superset Cell Bars
+    const colMeta = {};
+    displayCols.forEach(col => {
+      let isNum = false;
+      let maxVal = 0;
+      let sumVal = 0;
+      let hasValidNum = false;
+
+      for (let i = 0; i < finalRows.length; i++) {
+        const v = finalRows[i][col];
+        if (v !== null && v !== undefined && v !== '') {
+          const n = Number(v);
+          if (!isNaN(n)) {
+            hasValidNum = true;
+            if (Math.abs(n) > maxVal) maxVal = Math.abs(n);
+            sumVal += n;
+          }
+        }
+      }
+      isNum = hasValidNum && finalRows.every(r => {
+        const v = r[col];
+        return v === null || v === undefined || v === '' || !isNaN(Number(v));
+      });
+
+      colMeta[col] = { isNum, maxVal, sumVal };
+    });
+
+    // 3. Apply Quick Search
+    if (item._searchText) {
+      const q = String(item._searchText).toLowerCase().trim();
+      finalRows = finalRows.filter(row => {
+        return displayCols.some(c => String(row[c] ?? '').toLowerCase().includes(q));
+      });
+    }
+
+    // 4. Apply Column Sorting
+    if (item._sortCol && displayCols.includes(item._sortCol)) {
+      const sCol = item._sortCol;
+      const sDir = item._sortDir === 'desc' ? -1 : 1;
+      const isNum = colMeta[sCol]?.isNum;
+
+      finalRows.sort((a, b) => {
+        const vA = a[sCol];
+        const vB = b[sCol];
+        if (isNum) {
+          const nA = Number(vA) || 0;
+          const nB = Number(vB) || 0;
+          return (nA - nB) * sDir;
+        }
+        return String(vA ?? '').localeCompare(String(vB ?? ''), 'vi') * sDir;
+      });
+    }
+
+    // 5. Pagination
+    const pageSize = item.pageSize !== undefined ? Number(item.pageSize) : 20;
+    const totalCount = finalRows.length;
+    let totalPages = 1;
+    let curPage = item._page || 1;
+    let pagedRows = finalRows;
+
+    if (pageSize > 0) {
+      totalPages = Math.ceil(totalCount / pageSize) || 1;
+      if (curPage > totalPages) curPage = totalPages;
+      if (curPage < 1) curPage = 1;
+      item._page = curPage;
+      const startIdx = (curPage - 1) * pageSize;
+      pagedRows = finalRows.slice(startIdx, startIdx + pageSize);
+    }
+
+    // 6. Build DOM
+    const wrapper = document.createElement('div');
+    wrapper.className = `db-superset-table-container density-${item.density || 'normal'}`;
+
+    // A. Toolbar
+    const showToolbar = item.showSearch !== false || item.showExport !== false;
+    if (showToolbar) {
+      const toolbar = document.createElement('div');
+      toolbar.className = 'dst-toolbar';
+
+      let searchHtml = '';
+      if (item.showSearch !== false) {
+        searchHtml = `
+          <div class="dst-search-box">
+            <span class="dst-search-icon">🔍</span>
+            <input type="text" class="dst-search-input" placeholder="Tìm kiếm nhanh..." value="${escapeHtml(item._searchText || '')}" />
+            ${item._searchText ? `<button class="dst-search-clear" title="Xóa tìm kiếm">✕</button>` : ''}
+          </div>
+        `;
+      }
+
+      toolbar.innerHTML = `
+        <div class="dst-toolbar-left">
+          ${searchHtml}
+          <span class="dst-count-badge">${totalCount} dòng</span>
+        </div>
+        <div class="dst-toolbar-right">
+          ${item.showExport !== false ? `<button class="dst-export-btn" title="Xuất dữ liệu bảng ra file Excel/CSV">📥 Xuất Tệp</button>` : ''}
+        </div>
+      `;
+
+      // Bind search
+      const sInput = toolbar.querySelector('.dst-search-input');
+      sInput?.addEventListener('input', (e) => {
+        item._searchText = e.target.value;
+        item._page = 1;
+        renderSupersetTable(item, containerEl);
+      });
+
+      const clearBtn = toolbar.querySelector('.dst-search-clear');
+      clearBtn?.addEventListener('click', () => {
+        item._searchText = '';
+        item._page = 1;
+        renderSupersetTable(item, containerEl);
+      });
+
+      // Bind export
+      const expBtn = toolbar.querySelector('.dst-export-btn');
+      expBtn?.addEventListener('click', () => {
+        exportSupersetTable(item, finalRows, displayCols);
+      });
+
+      wrapper.appendChild(toolbar);
+    }
+
+    // B. Table Scroll Area
+    const scrollArea = document.createElement('div');
+    scrollArea.className = 'dst-scroll-area';
+
+    const table = document.createElement('table');
+    table.className = 'db-superset-table';
+
+    // Header
+    const thead = document.createElement('thead');
+    let thsHtml = '';
+    if (item.showRowNumber !== false) {
+      thsHtml += `<th class="dst-th-stt">STT</th>`;
+    }
+    displayCols.forEach(col => {
+      const isSorted = item._sortCol === col;
+      const arrow = isSorted ? (item._sortDir === 'desc' ? '▼' : '▲') : '↕';
+      const align = colMeta[col]?.isNum ? 'align-right' : 'align-left';
+      thsHtml += `
+        <th class="${align} ${isSorted ? 'sorted' : ''}" data-col="${escapeHtml(col)}" title="Nhấn để sắp xếp theo cột ${escapeHtml(col)}">
+          <span>${escapeHtml(col)}</span>
+          <span class="dst-sort-icon">${arrow}</span>
+        </th>
+      `;
+    });
+    thead.innerHTML = `<tr>${thsHtml}</tr>`;
+
+    // Sort event
+    thead.querySelectorAll('th[data-col]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (item._sortCol === col) {
+          item._sortDir = item._sortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          item._sortCol = col;
+          item._sortDir = 'desc';
+        }
+        renderSupersetTable(item, containerEl);
+      });
+    });
+    table.appendChild(thead);
+
+    // Body
+    const tbody = document.createElement('tbody');
+    let rowsHtml = '';
+    pagedRows.forEach((row, rIdx) => {
+      const stt = pageSize > 0 ? ((curPage - 1) * pageSize + rIdx + 1) : (rIdx + 1);
+      let tdsHtml = '';
+      if (item.showRowNumber !== false) {
+        tdsHtml += `<td class="dst-td-stt">${stt}</td>`;
+      }
+
+      displayCols.forEach(col => {
+        const val = row[col];
+        const isNum = colMeta[col]?.isNum;
+        let cellFormatted = val !== undefined && val !== null ? String(val) : '';
+        let barHtml = '';
+
+        if (isNum && val !== '' && val !== null && val !== undefined) {
+          const num = Number(val);
+          if (!isNaN(num)) {
+            cellFormatted = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(num);
+            if (item.showCellBars !== false && colMeta[col].maxVal > 0) {
+              const pct = Math.max(0, Math.min(100, Math.round((Math.abs(num) / colMeta[col].maxVal) * 100)));
+              barHtml = `<div class="dst-cell-bar" style="width:${pct}%;"></div>`;
+            }
+          }
+        }
+
+        const align = isNum ? 'align-right' : 'align-left';
+        tdsHtml += `
+          <td class="${align}">
+            ${barHtml}
+            <span class="dst-cell-value">${escapeHtml(cellFormatted)}</span>
+          </td>
+        `;
+      });
+
+      rowsHtml += `<tr>${tdsHtml}</tr>`;
+    });
+
+    if (pagedRows.length === 0) {
+      rowsHtml = `<tr><td colspan="${displayCols.length + (item.showRowNumber !== false ? 1 : 0)}" style="text-align:center;padding:24px;color:var(--db-text-sub);font-style:italic;">Không tìm thấy kết quả phù hợp với từ khóa "${escapeHtml(item._searchText || '')}"</td></tr>`;
+    }
+    tbody.innerHTML = rowsHtml;
+    table.appendChild(tbody);
+
+    // Footer Totals Row
+    if (item.showTotals !== false && finalRows.length > 0) {
+      const tfoot = document.createElement('tfoot');
+      let footTds = '';
+      if (item.showRowNumber !== false) {
+        footTds += `<td class="dst-td-stt">∑</td>`;
+      }
+
+      displayCols.forEach((col, idx) => {
+        const isNum = colMeta[col]?.isNum;
+        if (idx === 0 && !isNum) {
+          footTds += `<td class="dst-total-label">Tổng cộng</td>`;
+        } else if (isNum) {
+          const sum = finalRows.reduce((acc, r) => acc + (Number(r[col]) || 0), 0);
+          const formatted = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(sum);
+          footTds += `<td class="align-right dst-total-val">${formatted}</td>`;
+        } else {
+          footTds += `<td></td>`;
+        }
+      });
+
+      tfoot.innerHTML = `<tr>${footTds}</tr>`;
+      table.appendChild(tfoot);
+    }
+
+    scrollArea.appendChild(table);
+    wrapper.appendChild(scrollArea);
+
+    // C. Pagination Footer
+    if (pageSize > 0 && totalPages > 1) {
+      const pagEl = document.createElement('div');
+      pagEl.className = 'dst-pagination';
+      const startNum = (curPage - 1) * pageSize + 1;
+      const endNum = Math.min(curPage * pageSize, totalCount);
+
+      pagEl.innerHTML = `
+        <span class="dst-page-info">Trang <strong>${curPage}</strong> / ${totalPages} (Dòng ${startNum} - ${endNum} của ${totalCount})</span>
+        <div class="dst-page-btns">
+          <button class="dst-pbtn dst-btn-first" ${curPage <= 1 ? 'disabled' : ''} title="Trang đầu">⏮</button>
+          <button class="dst-pbtn dst-btn-prev" ${curPage <= 1 ? 'disabled' : ''} title="Trang trước">◀ Trước</button>
+          <span style="font-weight:700;padding:0 4px;font-size:11px;">${curPage}</span>
+          <button class="dst-pbtn dst-btn-next" ${curPage >= totalPages ? 'disabled' : ''} title="Trang sau">Sau ▶</button>
+          <button class="dst-pbtn dst-btn-last" ${curPage >= totalPages ? 'disabled' : ''} title="Trang cuối">⏭</button>
+        </div>
+      `;
+
+      pagEl.querySelector('.dst-btn-first')?.addEventListener('click', () => {
+        item._page = 1;
+        renderSupersetTable(item, containerEl);
+      });
+      pagEl.querySelector('.dst-btn-prev')?.addEventListener('click', () => {
+        if (curPage > 1) {
+          item._page = curPage - 1;
+          renderSupersetTable(item, containerEl);
+        }
+      });
+      pagEl.querySelector('.dst-btn-next')?.addEventListener('click', () => {
+        if (curPage < totalPages) {
+          item._page = curPage + 1;
+          renderSupersetTable(item, containerEl);
+        }
+      });
+      pagEl.querySelector('.dst-btn-last')?.addEventListener('click', () => {
+        item._page = totalPages;
+        renderSupersetTable(item, containerEl);
+      });
+
+      wrapper.appendChild(pagEl);
+    }
+
+    containerEl.appendChild(wrapper);
+  }
+
   const WidgetConfigModal = {
     currentType: 'filter',
     editingItemId: null,
@@ -3225,13 +3899,45 @@ ${expectedOutput}
 
       if (bodyEl) bodyEl.scrollTop = 0;
 
-      if (type === 'filter') {
-        const modalBox = modal.querySelector('.db-simple-box');
-        if (modalBox) {
+      const modalBox = modal.querySelector('.db-simple-box');
+      if (modalBox) {
+        if (type === 'table') {
+          modalBox.style.maxWidth = '1380px';
+          modalBox.style.width = '96vw';
+          modalBox.style.maxHeight = '94vh';
+          modalBox.style.height = '94vh';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'hidden';
+            bodyEl.style.padding = '12px 16px';
+            bodyEl.style.maxHeight = 'calc(94vh - 110px)';
+            bodyEl.style.height = 'calc(94vh - 110px)';
+          }
+        } else if (type === 'filter') {
           modalBox.style.maxWidth = '760px';
+          modalBox.style.width = '';
+          modalBox.style.maxHeight = '92vh';
+          modalBox.style.height = '';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'auto';
+            bodyEl.style.padding = '20px';
+            bodyEl.style.maxHeight = 'calc(90vh - 120px)';
+            bodyEl.style.height = '';
+          }
+        } else {
+          modalBox.style.maxWidth = '540px';
+          modalBox.style.width = '';
           modalBox.style.maxHeight = '90vh';
+          modalBox.style.height = '';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'auto';
+            bodyEl.style.padding = '20px';
+            bodyEl.style.maxHeight = 'calc(90vh - 120px)';
+            bodyEl.style.height = '';
+          }
         }
+      }
 
+      if (type === 'filter') {
         titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:8px;"><span>🔍</span><span>${existing ? 'Chỉnh Sửa Bộ Lọc Dữ Liệu' : 'Thêm Bộ Lọc Dữ Liệu (Filter Studio)'}</span></span>`;
         const curCol = existing?.filterColumn && cols.includes(existing.filterColumn) ? existing.filterColumn : (cols[0] || '');
         const allDataRows = DataStore.getData(curSourceKey, curCol);
@@ -3863,18 +4569,249 @@ ${expectedOutput}
             <input type="text" class="ce-input" id="wmFrameNameInput" value="${existing ? existing.name : 'Khu Vực Phân Tích'}" />
           </div>
         `;
+      } else if (type === 'table') {
+        titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:8px;"><span>📋</span><span>${existing ? 'Chỉnh Sửa Bảng Dữ Liệu (Superset Table Studio)' : 'Cấu Hình Bảng Dữ Liệu (Superset Table Studio)'}</span></span>`;
+        const curName = existing ? existing.name : 'Bảng Dữ Liệu';
+        const curMode = existing?.queryMode || 'raw';
+        const curCols = existing?.columns || cols.slice(0, 8);
+        const curGroupBy = existing?.groupByCols || (cols[0] ? [cols[0]] : []);
+        const curMetrics = existing?.metrics || (cols[1] ? [{ col: cols[1], agg: 'sum', label: `Tổng ${cols[1]}` }] : []);
+        const showSTT = existing?.showRowNumber !== false;
+        const showTotals = existing?.showTotals !== false;
+        const showBars = existing?.showCellBars !== false;
+        const showSearch = existing?.showSearch !== false;
+        const showExport = existing?.showExport !== false;
+        const curPageSize = existing?.pageSize !== undefined ? existing.pageSize : 20;
+        const curDensity = existing?.density || 'normal';
+        const curRowLimit = existing?.rowLimit || 1000;
+
+        bodyEl.innerHTML = `
+          <div class="table-studio-split-container">
+            <!-- CỘT BÊN TRÁI: SIDEBAR CẤU HÌNH -->
+            <aside class="table-studio-sidebar">
+              <!-- 1. NGUỒN DỮ LIỆU & TIÊU ĐỀ -->
+              <div class="table-studio-sec">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">1</span>
+                    <span>Nguồn Dữ Liệu &amp; Tiêu Đề</span>
+                  </div>
+                  <span style="font-size:11px;color:#0284c7;font-weight:600;">Superset Studio</span>
+                </div>
+                <div class="ai-form-group" style="margin-bottom:8px;">
+                  <label class="ai-label">Nguồn dữ liệu (Sheet / File / Toàn bộ):</label>
+                  <select class="ce-select" id="wmTableSourceSelect" style="width:100%;">
+                    ${availableSources.map(s => `<option value="${escapeHtml(s.key)}" ${s.key === curSourceKey ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
+                  </select>
+                  <div style="font-size:10.5px;color:var(--db-text-sub,#64748b);margin-top:3px;">
+                    💡 Hỗ trợ: Chọn sheet lẻ, toàn bộ sheet của 1 file hoặc tất cả các file đã tải.
+                  </div>
+                </div>
+                <div class="ai-form-group" style="margin-bottom:0;">
+                  <label class="ai-label">Tiêu đề bảng hiển thị:</label>
+                  <input type="text" class="ce-input" id="wmTableNameInput" value="${escapeHtml(curName)}" placeholder="Nhập tên bảng..." />
+                </div>
+              </div>
+
+              <!-- 2. CHẾ ĐỘ TRUY VẤN (QUERY MODE KIỂU APACHE SUPERSET) -->
+              <div class="table-studio-sec">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">2</span>
+                    <span>Chế Độ Dữ Liệu (Query Mode)</span>
+                  </div>
+                </div>
+                <div class="table-mode-toggle">
+                  <label class="table-mode-card ${curMode === 'raw' ? 'active' : ''}" id="cardModeRaw">
+                    <input type="radio" name="wmTableQueryMode" value="raw" ${curMode === 'raw' ? 'checked' : ''} style="margin-top:2px;" />
+                    <div>
+                      <div class="table-mode-title">📄 Bản Ghi Chi Tiết</div>
+                      <div class="table-mode-desc">Xem từng dòng dữ liệu, chọn cột.</div>
+                    </div>
+                  </label>
+                  <label class="table-mode-card ${curMode === 'aggregate' ? 'active' : ''}" id="cardModeAgg">
+                    <input type="radio" name="wmTableQueryMode" value="aggregate" ${curMode === 'aggregate' ? 'checked' : ''} style="margin-top:2px;" />
+                    <div>
+                      <div class="table-mode-title">📊 Tổng Hợp (Group By)</div>
+                      <div class="table-mode-desc">Gom nhóm Dimension &amp; Metrics.</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 3A. CẤU HÌNH CỘT CHO BẢN GHI CHI TIẾT (RAW MODE) -->
+              <div class="table-studio-sec" id="secTableRawCols" style="${curMode === 'raw' ? 'display:block;' : 'display:none;'}">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">3</span>
+                    <span>Chọn Cột Hiển Thị</span>
+                    <span class="dst-badge" id="wmTableColCountBadge" style="background:#e0f2fe;color:#0284c7;font-size:10.5px;padding:1px 6px;border-radius:10px;">${curCols.length}/${cols.length}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:4px;">
+                    <button type="button" class="dst-pbtn" id="btnTableSelectAllCols" title="Chọn tất cả các trường dữ liệu" style="padding:2px 7px;font-size:11px;font-weight:600;background:#0284c7;color:#fff;border-color:#0284c7;">✓ Tất cả</button>
+                    <button type="button" class="dst-pbtn" id="btnTableDeselectAllCols" title="Bỏ chọn toàn bộ" style="padding:2px 7px;font-size:11px;">✕ Bỏ chọn</button>
+                  </div>
+                </div>
+                <div style="margin-bottom:8px;">
+                  <input type="text" class="ce-input" id="inpTableColSearch" placeholder="🔍 Tìm nhanh cột..." style="height:28px;font-size:11px;padding:3px 8px;" />
+                </div>
+                <div class="table-col-chip-grid" id="wmTableColGrid">
+                  ${cols.map(c => `
+                    <label class="table-col-chip" data-col-name="${escapeHtml(c).toLowerCase()}">
+                      <input type="checkbox" class="wm-table-col-checkbox" value="${escapeHtml(c)}" ${curCols.includes(c) ? 'checked' : ''} />
+                      <span>${escapeHtml(c)}</span>
+                    </label>
+                  `).join('')}
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+                  <label class="ai-label" style="margin-bottom:0;white-space:nowrap;font-size:11.5px;">Giới hạn dòng:</label>
+                  <select class="ce-select" id="wmTableRowLimit" style="width:130px;height:28px;font-size:11.5px;">
+                    <option value="100" ${curRowLimit === 100 ? 'selected' : ''}>100 dòng</option>
+                    <option value="500" ${curRowLimit === 500 ? 'selected' : ''}>500 dòng</option>
+                    <option value="1000" ${curRowLimit === 1000 ? 'selected' : ''}>1.000 dòng</option>
+                    <option value="5000" ${curRowLimit === 5000 ? 'selected' : ''}>5.000 dòng</option>
+                    <option value="0" ${curRowLimit === 0 ? 'selected' : ''}>Tất cả</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- 3B. CẤU HÌNH NHÓM VÀ CHỈ SỐ CHO GROUP BY (AGGREGATE MODE) -->
+              <div class="table-studio-sec" id="secTableAggCols" style="${curMode === 'aggregate' ? 'display:block;' : 'display:none;'}">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">3</span>
+                    <span>Gom Nhóm &amp; Chỉ Số (Superset)</span>
+                  </div>
+                </div>
+                <div class="ai-form-group">
+                  <label class="ai-label" style="font-size:11.5px;">1. Cột Gom Nhóm (Dimensions):</label>
+                  <div class="table-col-chip-grid" id="wmTableGroupGrid" style="max-height:100px;">
+                    ${cols.map(c => `
+                      <label class="table-col-chip">
+                        <input type="checkbox" class="wm-table-group-checkbox" value="${escapeHtml(c)}" ${curGroupBy.includes(c) ? 'checked' : ''} />
+                        <span>${escapeHtml(c)}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <div class="ai-form-group" style="margin-top:8px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                    <label class="ai-label" style="margin-bottom:0;font-size:11.5px;">2. Chỉ Số Tính Toán (Metrics):</label>
+                    <button type="button" class="dst-pbtn" id="btnTableAddMetric" style="background:#0284c7;color:#fff;border-color:#0284c7;padding:2px 7px;font-size:11px;">➕ Thêm</button>
+                  </div>
+                  <div id="wmTableMetricsList">
+                    ${curMetrics.map(m => `
+                      <div class="table-metric-row">
+                        <select class="ce-select wm-metric-col-select" style="font-size:11px;">
+                          ${cols.map(c => `<option value="${escapeHtml(c)}" ${c === m.col ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                        </select>
+                        <select class="ce-select wm-metric-agg-select" style="font-size:11px;width:95px;">
+                          <option value="sum" ${m.agg === 'sum' ? 'selected' : ''}>SUM</option>
+                          <option value="avg" ${m.agg === 'avg' ? 'selected' : ''}>AVG</option>
+                          <option value="count" ${m.agg === 'count' ? 'selected' : ''}>COUNT</option>
+                          <option value="min" ${m.agg === 'min' ? 'selected' : ''}>MIN</option>
+                          <option value="max" ${m.agg === 'max' ? 'selected' : ''}>MAX</option>
+                          <option value="count_distinct" ${m.agg === 'count_distinct' ? 'selected' : ''}>COUNT DISTINCT</option>
+                        </select>
+                        <input type="text" class="ce-input wm-metric-label-input" value="${escapeHtml(m.label || '')}" placeholder="Tên hiển thị..." style="font-size:11px;" />
+                        <button type="button" class="dst-pbtn wm-btn-del-metric" style="color:#ef4444;border-color:#fca5a5;padding:2px 6px;" title="Xóa chỉ số">🗑️</button>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. TÙY CHỌN HIỂN THỊ NÂNG CAO (SUPERSET TABLE OPTIONS) -->
+              <div class="table-studio-sec">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">4</span>
+                    <span>Tùy Chọn Hiển Thị (Visual Options)</span>
+                  </div>
+                </div>
+                <div class="table-opts-grid">
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowSTT" ${showSTT ? 'checked' : ''} />
+                    <span>🔢 Cột STT (Số Thứ Tự)</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowTotals" ${showTotals ? 'checked' : ''} />
+                    <span>∑ Dòng Tổng Cộng (Totals)</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowBars" ${showBars ? 'checked' : ''} />
+                    <span>📊 Cell Bars thanh đo số</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowSearch" ${showSearch ? 'checked' : ''} />
+                    <span>🔍 Ô Tìm Kiếm Nhanh</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowExport" ${showExport ? 'checked' : ''} />
+                    <span>📥 Nút Xuất Excel/CSV</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmHideHeaderCheckbox" ${existing?.hideHeader ? 'checked' : ''} />
+                    <span>👁️ Ẩn tiêu đề trên Canvas</span>
+                  </label>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;">
+                  <div class="ai-form-group" style="margin-bottom:0;">
+                    <label class="ai-label" style="font-size:11.5px;">Phân trang (Page Size):</label>
+                    <select class="ce-select" id="wmTablePageSize" style="width:100%;font-size:11.5px;height:28px;">
+                      <option value="10" ${curPageSize === 10 ? 'selected' : ''}>10 dòng / trang</option>
+                      <option value="20" ${curPageSize === 20 ? 'selected' : ''}>20 dòng / trang</option>
+                      <option value="50" ${curPageSize === 50 ? 'selected' : ''}>50 dòng / trang</option>
+                      <option value="100" ${curPageSize === 100 ? 'selected' : ''}>100 dòng / trang</option>
+                      <option value="0" ${curPageSize === 0 ? 'selected' : ''}>Không phân trang</option>
+                    </select>
+                  </div>
+                  <div class="ai-form-group" style="margin-bottom:0;">
+                    <label class="ai-label" style="font-size:11.5px;">Mật độ (Table Density):</label>
+                    <select class="ce-select" id="wmTableDensity" style="width:100%;font-size:11.5px;height:28px;">
+                      <option value="compact" ${curDensity === 'compact' ? 'selected' : ''}>Nhỏ gọn (Compact)</option>
+                      <option value="normal" ${curDensity === 'normal' ? 'selected' : ''}>Chuẩn (Normal)</option>
+                      <option value="comfortable" ${curDensity === 'comfortable' ? 'selected' : ''}>Rộng rãi (Comfortable)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </aside>
+
+            <!-- CỘT BÊN PHẢI: BẢNG DEMO TRỰC TIẾP (LIVE DEMO PREVIEW PANE) -->
+            <main class="table-studio-preview-pane">
+              <div class="table-studio-preview-header">
+                <div class="table-studio-preview-title">
+                  <span class="table-studio-live-dot"></span>
+                  <span id="wmTableDemoHeaderTitle">Bản Xem Trước Trực Tiếp (Live Demo)</span>
+                  <span class="dst-badge" id="wmTableDemoBadge" style="background:#f1f5f9;color:#475569;font-size:11px;padding:2px 8px;font-weight:600;border:1px solid #cbd5e1;"></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button type="button" class="dst-pbtn" id="btnRefreshTableDemo" title="Tải lại bảng demo" style="font-size:11.5px;padding:3px 9px;">🔄 Cập nhật</button>
+                </div>
+              </div>
+              <div class="table-studio-preview-body" id="wmTableLivePreviewContainer">
+                <!-- Superset Table render trực tiếp ở đây -->
+              </div>
+            </main>
+          </div>
+        `;
       }
 
-      // Thêm tùy chọn Ẩn Header cho mọi loại widget
-      const hideHeaderHtml = `
-        <div class="ai-form-group" style="margin-top:8px;padding-top:10px;border-top:1px dashed var(--db-card-border);">
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--db-text-main);cursor:pointer;user-select:none;" title="Tắt thanh tiêu đề của widget trên Canvas để chỉ hiển thị nội dung bên trong">
-            <input type="checkbox" id="wmHideHeaderCheckbox" ${existing?.hideHeader ? 'checked' : ''} style="cursor:pointer;" />
-            <span>Ẩn thanh tiêu đề (Header) của widget (Chỉ hiển thị nội dung bên trong)</span>
-          </label>
-        </div>
-      `;
-      bodyEl.insertAdjacentHTML('beforeend', hideHeaderHtml);
+      // Thêm tùy chọn Ẩn Header cho các loại widget khác (Table đã tích hợp trong sidebar)
+      if (type !== 'table') {
+        const hideHeaderHtml = `
+          <div class="ai-form-group" style="margin-top:8px;padding-top:10px;border-top:1px dashed var(--db-card-border);">
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--db-text-main);cursor:pointer;user-select:none;" title="Tắt thanh tiêu đề của widget trên Canvas để chỉ hiển thị nội dung bên trong">
+              <input type="checkbox" id="wmHideHeaderCheckbox" ${existing?.hideHeader ? 'checked' : ''} style="cursor:pointer;" />
+              <span>Ẩn thanh tiêu đề (Header) của widget (Chỉ hiển thị nội dung bên trong)</span>
+            </label>
+          </div>
+        `;
+        bodyEl.insertAdjacentHTML('beforeend', hideHeaderHtml);
+      }
 
       if (modal) modal.classList.add('open');
 
@@ -3883,6 +4820,232 @@ ${expectedOutput}
           bindCanvaBarEvents('wmHeading', 'wmHeadingTextInput', 'wmHeadingPreviewBox');
         } else if (type === 'text') {
           bindCanvaBarEvents('wmText', 'wmTextContent', 'wmTextPreviewBox');
+        } else if (type === 'table') {
+          const cardRaw = document.getElementById('cardModeRaw');
+          const cardAgg = document.getElementById('cardModeAgg');
+          const secRaw = document.getElementById('secTableRawCols');
+          const secAgg = document.getElementById('secTableAggCols');
+          const modeRadios = document.querySelectorAll('input[name="wmTableQueryMode"]');
+
+          // Hàm cập nhật Live Demo Preview tức thì
+          const updateTableLiveDemo = () => {
+            const previewContainer = document.getElementById('wmTableLivePreviewContainer');
+            if (!previewContainer) return;
+
+            const sourceKey = document.getElementById('wmTableSourceSelect')?.value || '';
+            const queryMode = document.querySelector('input[name="wmTableQueryMode"]:checked')?.value || 'raw';
+            const name = document.getElementById('wmTableNameInput')?.value.trim() || 'Bảng Dữ Liệu';
+            const showRowNumber = Boolean(document.getElementById('wmTableShowSTT')?.checked);
+            const showTotals = Boolean(document.getElementById('wmTableShowTotals')?.checked);
+            const showCellBars = Boolean(document.getElementById('wmTableShowBars')?.checked);
+            const showSearch = Boolean(document.getElementById('wmTableShowSearch')?.checked);
+            const showExport = Boolean(document.getElementById('wmTableShowExport')?.checked);
+            const pageSize = Number(document.getElementById('wmTablePageSize')?.value !== undefined ? document.getElementById('wmTablePageSize').value : 20);
+            const density = document.getElementById('wmTableDensity')?.value || 'normal';
+            const rowLimit = Number(document.getElementById('wmTableRowLimit')?.value || 1000);
+
+            const rawCols = Array.from(document.querySelectorAll('#wmTableColGrid .wm-table-col-checkbox:checked')).map(cb => cb.value);
+            const groupByCols = Array.from(document.querySelectorAll('#wmTableGroupGrid .wm-table-group-checkbox:checked')).map(cb => cb.value);
+            const metrics = [];
+            document.querySelectorAll('#wmTableMetricsList .table-metric-row').forEach(row => {
+              const col = row.querySelector('.wm-metric-col-select')?.value;
+              const agg = row.querySelector('.wm-metric-agg-select')?.value || 'sum';
+              const label = row.querySelector('.wm-metric-label-input')?.value.trim() || `${agg.toUpperCase()}(${col})`;
+              if (col) metrics.push({ col, agg, label });
+            });
+
+            // Cập nhật badge số lượng cột đã chọn
+            const totalCols = document.querySelectorAll('#wmTableColGrid .wm-table-col-checkbox').length;
+            const countBadge = document.getElementById('wmTableColCountBadge');
+            if (countBadge) countBadge.textContent = `${rawCols.length}/${totalCols}`;
+
+            // Cập nhật badge thông tin trên header preview
+            const demoBadge = document.getElementById('wmTableDemoBadge');
+            if (demoBadge) {
+              if (queryMode === 'raw') {
+                const limitText = rowLimit === 0 ? 'Toàn bộ dòng' : `Tối đa ${rowLimit.toLocaleString('vi-VN')} dòng`;
+                demoBadge.textContent = `Bản ghi chi tiết • ${rawCols.length} cột • ${limitText}`;
+              } else {
+                demoBadge.textContent = `Tổng hợp • ${groupByCols.length} Dimension • ${metrics.length} Metric`;
+              }
+            }
+
+            // Cập nhật tiêu đề bảng trên header preview
+            const demoTitle = document.getElementById('wmTableDemoHeaderTitle');
+            if (demoTitle) {
+              demoTitle.textContent = name ? `Live Demo: ${name}` : 'Bản Xem Trước Trực Tiếp (Live Demo)';
+            }
+
+            const mockItem = {
+              id: 'demo_table_preview',
+              type: 'table',
+              name: name,
+              dataSourceKey: sourceKey,
+              queryMode: queryMode,
+              columns: rawCols.length > 0 ? rawCols : DataStore.getColumns(sourceKey).slice(0, 8),
+              groupByCols: groupByCols.length > 0 ? groupByCols : [DataStore.getColumns(sourceKey)[0] || 'Nhóm'],
+              metrics: metrics.length > 0 ? metrics : [{ col: DataStore.getColumns(sourceKey)[1] || 'Doanh Thu', agg: 'sum', label: `Tổng ${DataStore.getColumns(sourceKey)[1] || 'Doanh Thu'}` }],
+              showRowNumber,
+              showTotals,
+              showCellBars,
+              showSearch,
+              showExport,
+              pageSize,
+              density,
+              rowLimit,
+              tabId: DashboardState.present.activeTabId,
+              _page: 1
+            };
+
+            renderSupersetTable(mockItem, previewContainer);
+          };
+
+          modeRadios.forEach(r => {
+            r.addEventListener('change', (e) => {
+              const val = e.target.value;
+              cardRaw?.classList.toggle('active', val === 'raw');
+              cardAgg?.classList.toggle('active', val === 'aggregate');
+              if (secRaw) secRaw.style.display = val === 'raw' ? 'block' : 'none';
+              if (secAgg) secAgg.style.display = val === 'aggregate' ? 'block' : 'none';
+              updateTableLiveDemo();
+            });
+          });
+
+          // Thay đổi nguồn dữ liệu: nạp lại cột và render lại Live Demo
+          document.getElementById('wmTableSourceSelect')?.addEventListener('change', (e) => {
+            const newKey = e.target.value;
+            const newCols = DataStore.getColumns(newKey);
+            const gridRaw = document.getElementById('wmTableColGrid');
+            if (gridRaw) {
+              gridRaw.innerHTML = newCols.map(c => `
+                <label class="table-col-chip" data-col-name="${escapeHtml(c).toLowerCase()}">
+                  <input type="checkbox" class="wm-table-col-checkbox" value="${escapeHtml(c)}" checked />
+                  <span>${escapeHtml(c)}</span>
+                </label>
+              `).join('');
+            }
+            const gridGroup = document.getElementById('wmTableGroupGrid');
+            if (gridGroup) {
+              gridGroup.innerHTML = newCols.map((c, i) => `
+                <label class="table-col-chip">
+                  <input type="checkbox" class="wm-table-group-checkbox" value="${escapeHtml(c)}" ${i === 0 ? 'checked' : ''} />
+                  <span>${escapeHtml(c)}</span>
+                </label>
+              `).join('');
+            }
+            document.querySelectorAll('#wmTableMetricsList .wm-metric-col-select').forEach(sel => {
+              sel.innerHTML = newCols.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            });
+            updateTableLiveDemo();
+          });
+
+          // Tìm nhanh cột
+          document.getElementById('inpTableColSearch')?.addEventListener('input', (e) => {
+            const q = e.target.value.toLowerCase().trim();
+            document.querySelectorAll('#wmTableColGrid .table-col-chip').forEach(chip => {
+              const name = chip.getAttribute('data-col-name') || '';
+              chip.style.display = !q || name.includes(q) ? 'flex' : 'none';
+            });
+          });
+
+          // Nút chọn tất cả / bỏ chọn cột
+          document.getElementById('btnTableSelectAllCols')?.addEventListener('click', () => {
+            document.querySelectorAll('#wmTableColGrid .wm-table-col-checkbox').forEach(cb => { cb.checked = true; });
+            updateTableLiveDemo();
+          });
+          document.getElementById('btnTableDeselectAllCols')?.addEventListener('click', () => {
+            document.querySelectorAll('#wmTableColGrid .wm-table-col-checkbox').forEach(cb => { cb.checked = false; });
+            updateTableLiveDemo();
+          });
+
+          // Bắt sự kiện thay đổi checkbox cột Raw & Group
+          document.getElementById('wmTableColGrid')?.addEventListener('change', (e) => {
+            if (e.target.matches('.wm-table-col-checkbox')) {
+              updateTableLiveDemo();
+            }
+          });
+          document.getElementById('wmTableGroupGrid')?.addEventListener('change', (e) => {
+            if (e.target.matches('.wm-table-group-checkbox')) {
+              updateTableLiveDemo();
+            }
+          });
+
+          // Quản lý Metrics (Thêm / Sửa / Xóa)
+          const metricsList = document.getElementById('wmTableMetricsList');
+          document.getElementById('btnTableAddMetric')?.addEventListener('click', () => {
+            if (!metricsList) return;
+            const curSource = document.getElementById('wmTableSourceSelect')?.value;
+            const curCols = DataStore.getColumns(curSource);
+            const defaultCol = curCols[1] || curCols[0] || 'Cột';
+            const row = document.createElement('div');
+            row.className = 'table-metric-row';
+            row.innerHTML = `
+              <select class="ce-select wm-metric-col-select" style="font-size:11px;">
+                ${curCols.map(c => `<option value="${escapeHtml(c)}" ${c === defaultCol ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+              </select>
+              <select class="ce-select wm-metric-agg-select" style="font-size:11px;width:95px;">
+                <option value="sum" selected>SUM</option>
+                <option value="avg">AVG</option>
+                <option value="count">COUNT</option>
+                <option value="min">MIN</option>
+                <option value="max">MAX</option>
+                <option value="count_distinct">COUNT DISTINCT</option>
+              </select>
+              <input type="text" class="ce-input wm-metric-label-input" value="Tổng ${escapeHtml(defaultCol)}" placeholder="Tên hiển thị..." style="font-size:11px;" />
+              <button type="button" class="dst-pbtn wm-btn-del-metric" style="color:#ef4444;border-color:#fca5a5;padding:2px 6px;" title="Xóa chỉ số">🗑️</button>
+            `;
+            metricsList.appendChild(row);
+            updateTableLiveDemo();
+          });
+
+          metricsList?.addEventListener('change', (e) => {
+            if (e.target.matches('.wm-metric-col-select, .wm-metric-agg-select')) {
+              const r = e.target.closest('.table-metric-row');
+              const colSel = r?.querySelector('.wm-metric-col-select');
+              const aggSel = r?.querySelector('.wm-metric-agg-select');
+              const lblInput = r?.querySelector('.wm-metric-label-input');
+              if (colSel && aggSel && lblInput && !lblInput.dataset.userEdited) {
+                const aggNames = { sum: 'Tổng', avg: 'Trung bình', count: 'Số lượng', min: 'Nhỏ nhất', max: 'Lớn nhất', count_distinct: 'Đếm duy nhất' };
+                lblInput.value = `${aggNames[aggSel.value] || aggSel.value.toUpperCase()} ${colSel.value}`;
+              }
+              updateTableLiveDemo();
+            }
+          });
+
+          metricsList?.addEventListener('input', (e) => {
+            if (e.target.matches('.wm-metric-label-input')) {
+              e.target.dataset.userEdited = 'true';
+              updateTableLiveDemo();
+            }
+          });
+
+          metricsList?.addEventListener('click', (e) => {
+            const delBtn = e.target.closest('.wm-btn-del-metric');
+            if (delBtn) {
+              const r = delBtn.closest('.table-metric-row');
+              if (metricsList.children.length > 1) {
+                r?.remove();
+                updateTableLiveDemo();
+              } else {
+                showToast('Bảng cần có ít nhất 1 chỉ số đo lường!', 'warn');
+              }
+            }
+          });
+
+          // Tùy chọn hiển thị & phân trang & mật độ
+          ['wmTableShowSTT', 'wmTableShowTotals', 'wmTableShowBars', 'wmTableShowSearch', 'wmTableShowExport'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', updateTableLiveDemo);
+          });
+
+          ['wmTablePageSize', 'wmTableDensity', 'wmTableRowLimit'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', updateTableLiveDemo);
+          });
+
+          document.getElementById('wmTableNameInput')?.addEventListener('input', updateTableLiveDemo);
+          document.getElementById('btnRefreshTableDemo')?.addEventListener('click', updateTableLiveDemo);
+
+          // Khởi chạy ngay bảng demo khi mở modal
+          updateTableLiveDemo();
         }
       }, 20);
     },
@@ -3894,7 +5057,16 @@ ${expectedOutput}
         const modalBox = modal.querySelector('.db-simple-box');
         if (modalBox) {
           modalBox.style.maxWidth = '540px';
+          modalBox.style.width = '';
           modalBox.style.maxHeight = '90vh';
+          modalBox.style.height = '';
+        }
+        const bodyEl = modal.querySelector('.db-simple-body');
+        if (bodyEl) {
+          bodyEl.style.overflow = 'auto';
+          bodyEl.style.padding = '20px';
+          bodyEl.style.maxHeight = 'calc(90vh - 120px)';
+          bodyEl.style.height = '';
         }
       }
     },
@@ -4129,6 +5301,74 @@ ${expectedOutput}
           });
           DashboardState.selectedItemId = newId;
         }
+      } else if (this.currentType === 'table') {
+        const name = document.getElementById('wmTableNameInput')?.value.trim() || 'Bảng Dữ Liệu';
+        const sourceKey = document.getElementById('wmTableSourceSelect')?.value || '';
+        const queryMode = document.querySelector('input[name="wmTableQueryMode"]:checked')?.value || 'raw';
+        const showRowNumber = Boolean(document.getElementById('wmTableShowSTT')?.checked);
+        const showTotals = Boolean(document.getElementById('wmTableShowTotals')?.checked);
+        const showCellBars = Boolean(document.getElementById('wmTableShowBars')?.checked);
+        const showSearch = Boolean(document.getElementById('wmTableShowSearch')?.checked);
+        const showExport = Boolean(document.getElementById('wmTableShowExport')?.checked);
+        const pageSize = Number(document.getElementById('wmTablePageSize')?.value !== undefined ? document.getElementById('wmTablePageSize').value : 20);
+        const density = document.getElementById('wmTableDensity')?.value || 'normal';
+        const rowLimit = Number(document.getElementById('wmTableRowLimit')?.value || 1000);
+
+        const rawCols = Array.from(document.querySelectorAll('.wm-table-col-checkbox:checked')).map(cb => cb.value);
+        const groupByCols = Array.from(document.querySelectorAll('.wm-table-group-checkbox:checked')).map(cb => cb.value);
+        const metrics = [];
+        document.querySelectorAll('.table-metric-row').forEach(row => {
+          const col = row.querySelector('.wm-metric-col-select')?.value;
+          const agg = row.querySelector('.wm-metric-agg-select')?.value || 'sum';
+          const label = row.querySelector('.wm-metric-label-input')?.value.trim() || `${agg.toUpperCase()}(${col})`;
+          if (col) metrics.push({ col, agg, label });
+        });
+
+        if (this.editingItemId) {
+          const item = DashboardState.present.items.find(i => i.id === this.editingItemId);
+          if (item) {
+            item.name = name;
+            item.dataSourceKey = sourceKey;
+            item.queryMode = queryMode;
+            item.columns = rawCols.length > 0 ? rawCols : DataStore.getColumns(sourceKey).slice(0, 8);
+            item.groupByCols = groupByCols.length > 0 ? groupByCols : [DataStore.getColumns(sourceKey)[0] || 'Nhóm'];
+            item.metrics = metrics.length > 0 ? metrics : [{ col: DataStore.getColumns(sourceKey)[1] || 'Doanh Thu', agg: 'sum', label: `Tổng ${DataStore.getColumns(sourceKey)[1] || 'Doanh Thu'}` }];
+            item.showRowNumber = showRowNumber;
+            item.showTotals = showTotals;
+            item.showCellBars = showCellBars;
+            item.showSearch = showSearch;
+            item.showExport = showExport;
+            item.pageSize = pageSize;
+            item.density = density;
+            item.rowLimit = rowLimit;
+            item.hideHeader = hideHeader;
+            item._page = 1;
+          }
+        } else {
+          const newId = 'table_' + Date.now();
+          DashboardState.present.items.push({
+            id: newId,
+            type: 'table',
+            name: name,
+            dataSourceKey: sourceKey,
+            queryMode: queryMode,
+            columns: rawCols.length > 0 ? rawCols : DataStore.getColumns(sourceKey).slice(0, 8),
+            groupByCols: groupByCols.length > 0 ? groupByCols : [DataStore.getColumns(sourceKey)[0] || 'Nhóm'],
+            metrics: metrics.length > 0 ? metrics : [{ col: DataStore.getColumns(sourceKey)[1] || 'Doanh Thu', agg: 'sum', label: `Tổng ${DataStore.getColumns(sourceKey)[1] || 'Doanh Thu'}` }],
+            showRowNumber: showRowNumber,
+            showTotals: showTotals,
+            showCellBars: showCellBars,
+            showSearch: showSearch,
+            showExport: showExport,
+            pageSize: pageSize,
+            density: density,
+            rowLimit: rowLimit,
+            hideHeader: hideHeader,
+            tabId: DashboardState.present.activeTabId,
+            pos: getNextAvailablePosition(780, 420)
+          });
+          DashboardState.selectedItemId = newId;
+        }
       }
 
       const justAddedId = !this.editingItemId ? DashboardState.selectedItemId : null;
@@ -4292,6 +5532,8 @@ ${expectedOutput}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,400&family=Roboto:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 
   <!-- Fallback to local styles if opened inside project directory -->
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/dashboard-builder.css">
   <link rel="stylesheet" href="../../css/theme.css">
   <link rel="stylesheet" href="../../css/dashboard-builder.css">
 
@@ -4656,6 +5898,52 @@ ${expectedOutput}
       max-width: 100%; max-height: 100%; display: block;
     }
 
+    /* SUPERSET TABLE COMPONENT */
+    .db-item-box.is-type-table .db-item-body { padding: 0 !important; display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--db-card-bg); }
+    .db-superset-table-container { display: flex; flex-direction: column; height: 100%; width: 100%; overflow: hidden; font-family: inherit; color: var(--db-text-main); background: transparent; }
+    .dst-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--db-card-border); background: rgba(248, 250, 252, 0.7); flex-shrink: 0; gap: 8px; }
+    [data-theme="dark"] .dst-toolbar { background: rgba(30, 41, 59, 0.4); }
+    .dst-toolbar-left { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .dst-search-box { position: relative; display: flex; align-items: center; max-width: 220px; flex: 1; }
+    .dst-search-icon { position: absolute; left: 8px; font-size: 11px; pointer-events: none; opacity: 0.6; }
+    .dst-search-input { width: 100%; height: 28px; padding: 0 24px 0 26px; font-size: 11.5px; border: 1px solid var(--db-card-border); border-radius: 6px; background: var(--db-card-bg); color: var(--db-text-main); outline: none; }
+    .dst-search-clear { position: absolute; right: 6px; background: none; border: none; font-size: 11px; color: var(--db-text-sub); cursor: pointer; padding: 2px 4px; }
+    .dst-count-badge { font-size: 11px; font-weight: 600; color: var(--db-text-sub); background: rgba(0, 0, 0, 0.04); padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
+    .dst-export-btn { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: var(--db-accent); background: rgba(2, 132, 199, 0.08); border: 1px solid rgba(2, 132, 199, 0.25); border-radius: 6px; cursor: pointer; white-space: nowrap; }
+    .dst-export-btn:hover { background: var(--db-accent); color: #fff; }
+    .dst-scroll-area { flex: 1; overflow: auto; position: relative; min-height: 0; }
+    .db-superset-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; text-align: left; }
+    .db-superset-table thead th { position: sticky; top: 0; z-index: 5; background: #f8fafc; color: #475569; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; padding: 8px 12px; border-bottom: 2px solid var(--db-card-border); user-select: none; white-space: nowrap; cursor: pointer; }
+    [data-theme="dark"] .db-superset-table thead th { background: #1e293b; color: #cbd5e1; }
+    .db-superset-table thead th:hover { background: #f1f5f9; color: var(--db-accent); }
+    .db-superset-table thead th.sorted { color: var(--db-accent); border-bottom-color: var(--db-accent); }
+    .dst-sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.5; }
+    .db-superset-table thead th.sorted .dst-sort-icon { opacity: 1; }
+    .dst-th-stt, .dst-td-stt { width: 44px; min-width: 44px; max-width: 44px; text-align: center !important; color: var(--db-text-sub); font-size: 11px; }
+    .db-superset-table tbody tr:nth-child(even) { background: rgba(248, 250, 252, 0.45); }
+    [data-theme="dark"] .db-superset-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+    .db-superset-table tbody tr:hover { background: rgba(2, 132, 199, 0.06) !important; }
+    .db-superset-table td { padding: 7px 12px; border-bottom: 1px solid var(--db-card-border); white-space: nowrap; position: relative; vertical-align: middle; }
+    .density-compact .db-superset-table td { padding: 4px 8px; font-size: 11px; }
+    .density-compact .db-superset-table thead th { padding: 5px 8px; font-size: 10px; }
+    .density-comfortable .db-superset-table td { padding: 11px 14px; font-size: 13px; }
+    .density-comfortable .db-superset-table thead th { padding: 11px 14px; font-size: 12px; }
+    .align-left { text-align: left; } .align-right { text-align: right; } .align-center { text-align: center; }
+    .dst-cell-bar { position: absolute; top: 3px; bottom: 3px; right: 0; background: rgba(2, 132, 199, 0.14); border-radius: 3px; pointer-events: none; z-index: 0; }
+    [data-theme="dark"] .dst-cell-bar { background: rgba(56, 189, 248, 0.2); }
+    .dst-cell-value { position: relative; z-index: 1; }
+    .db-superset-table tfoot tr { position: sticky; bottom: 0; z-index: 4; background: #f1f5f9; font-weight: 700; border-top: 2px solid var(--db-card-border); }
+    [data-theme="dark"] .db-superset-table tfoot tr { background: #1e293b; }
+    .db-superset-table tfoot td { padding: 8px 12px; border-top: 2px solid var(--db-card-border); color: var(--db-text-main); }
+    .dst-total-label { font-weight: 800; color: var(--db-accent); text-transform: uppercase; font-size: 11px; }
+    .dst-pagination { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-top: 1px solid var(--db-card-border); background: rgba(248, 250, 252, 0.7); flex-shrink: 0; font-size: 11px; color: var(--db-text-sub); }
+    [data-theme="dark"] .dst-pagination { background: rgba(30, 41, 59, 0.4); }
+    .dst-page-btns { display: flex; align-items: center; gap: 4px; }
+    .dst-pbtn { height: 24px; padding: 0 8px; font-size: 11px; font-weight: 600; border: 1px solid var(--db-card-border); border-radius: 4px; background: var(--db-card-bg); color: var(--db-text-main); cursor: pointer; }
+    .dst-pbtn:hover:not(:disabled) { background: var(--db-accent); color: #fff; border-color: var(--db-accent); }
+    .dst-pbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .db-table-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--db-text-sub); font-size: 12px; font-style: italic; padding: 20px; text-align: center; }
+
     /* 5. BI PLATFORM FILTERS (ALL TYPES) */
     .db-filter-container {
       display: flex; flex-direction: column; gap: 6px; justify-content: center;
@@ -4979,7 +6267,6 @@ ${expectedOutput}
   <header class="db-header">
     <div class="db-header-left">
       <div class="db-title-container">
-        <span style="font-size:22px;">📊</span>
         <h1 class="db-title-heading" id="dashboardTitleHeading">${title}</h1>
       </div>
     </div>
@@ -5387,6 +6674,27 @@ ${expectedOutput}
     }
 
     function getData(sourceKey, fallbackCol = null) {
+      if (sourceKey === '__ALL_FILES__') {
+        const combined = [];
+        for (const f in FILES) {
+          for (const s in FILES[f]) {
+            const rows = FILES[f][s] || [];
+            for (let i = 0; i < rows.length; i++) combined.push(rows[i]);
+          }
+        }
+        return combined;
+      }
+      if (String(sourceKey).endsWith('::__ALL_SHEETS__')) {
+        const fn = String(sourceKey).replace('::__ALL_SHEETS__', '');
+        if (FILES[fn]) {
+          const combined = [];
+          for (const s in FILES[fn]) {
+            const rows = FILES[fn][s] || [];
+            for (let i = 0; i < rows.length; i++) combined.push(rows[i]);
+          }
+          return combined;
+        }
+      }
       if (!sourceKey && fallbackCol) {
         for (const f in FILES) {
           for (const s in FILES[f]) {
@@ -5919,8 +7227,387 @@ ${expectedOutput}
         canvas.appendChild(el);
         renderItemContent(item);
       });
+    }
 
-      updateCanvasTransform();
+    function exportSupersetTable(item, rows, cols) {
+      const rawName = (item.name || 'bang_du_lieu').replace(/[^a-zA-Z0-9_À-ỹ]/g, '_');
+      const fileName = rawName + '_' + new Date().toISOString().slice(0, 10);
+
+      const exportData = rows.map(r => {
+        const obj = {};
+        cols.forEach(c => {
+          obj[c] = r[c] !== undefined && r[c] !== null ? r[c] : '';
+        });
+        return obj;
+      });
+
+      if (typeof XLSX !== 'undefined' && XLSX.utils && XLSX.writeFile) {
+        try {
+          const ws = XLSX.utils.json_to_sheet(exportData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Data");
+          XLSX.writeFile(wb, fileName + '.xlsx');
+          return;
+        } catch (err) {
+          console.warn('XLSX export fallback to CSV:', err);
+        }
+      }
+
+      let csv = '\uFEFF';
+      csv += cols.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',') + '\\r\\n';
+      exportData.forEach(r => {
+        csv += cols.map(c => '"' + String(r[c] != null ? r[c] : '').replace(/"/g, '""') + '"').join(',') + '\\r\\n';
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function renderSupersetTable(item, containerEl) {
+      if (!containerEl) return;
+      containerEl.innerHTML = '';
+
+      const tabId = item.tabId || activeTabId || 'default';
+      const rawData = typeof getFilteredData === 'function' ? getFilteredData(item.dataSourceKey, [], tabId) : [];
+
+      if (!rawData || rawData.length === 0) {
+        containerEl.innerHTML = '<div class="db-table-empty"><div style="font-size:24px;margin-bottom:6px;">📋</div><div>Không có dữ liệu hiển thị</div></div>';
+        return;
+      }
+
+      const queryMode = item.queryMode || 'raw';
+      let displayCols = [];
+      let finalRows = [];
+
+      if (queryMode === 'aggregate') {
+        const groupCols = Array.isArray(item.groupByCols) && item.groupByCols.length > 0
+          ? item.groupByCols
+          : [Object.keys(rawData[0] || {})[0] || 'Nhóm'];
+
+        const metrics = Array.isArray(item.metrics) && item.metrics.length > 0
+          ? item.metrics
+          : [{ col: Object.keys(rawData[0] || {})[1] || 'Doanh Thu', agg: 'sum', label: 'Tổng ' + (Object.keys(rawData[0] || {})[1] || 'Doanh Thu') }];
+
+        displayCols = [...groupCols];
+        metrics.forEach(m => {
+          const mLabel = m.label || (m.agg.toUpperCase() + '(' + m.col + ')');
+          displayCols.push(mLabel);
+        });
+
+        const groupsMap = new Map();
+        for (let i = 0; i < rawData.length; i++) {
+          const row = rawData[i];
+          const gKey = groupCols.map(c => String(row[c] != null ? row[c] : '')).join('___:::___');
+          let g = groupsMap.get(gKey);
+          if (!g) {
+            g = { _keys: groupCols.map(c => row[c]), _rows: [] };
+            groupsMap.set(gKey, g);
+          }
+          g._rows.push(row);
+        }
+
+        for (const [_, g] of groupsMap.entries()) {
+          const outRow = {};
+          groupCols.forEach((c, idx) => {
+            outRow[c] = g._keys[idx];
+          });
+          metrics.forEach(m => {
+            const mLabel = m.label || (m.agg.toUpperCase() + '(' + m.col + ')');
+            const numVals = g._rows.map(r => Number(r[m.col])).filter(n => !isNaN(n));
+            let val = 0;
+            if (m.agg === 'sum') {
+              val = numVals.reduce((a, b) => a + b, 0);
+            } else if (m.agg === 'avg') {
+              val = numVals.length > 0 ? (numVals.reduce((a, b) => a + b, 0) / numVals.length) : 0;
+            } else if (m.agg === 'count') {
+              val = g._rows.length;
+            } else if (m.agg === 'min') {
+              val = numVals.length > 0 ? Math.min(...numVals) : 0;
+            } else if (m.agg === 'max') {
+              val = numVals.length > 0 ? Math.max(...numVals) : 0;
+            } else if (m.agg === 'count_distinct') {
+              val = new Set(g._rows.map(r => r[m.col])).size;
+            }
+            outRow[mLabel] = val;
+          });
+          finalRows.push(outRow);
+        }
+      } else {
+        displayCols = Array.isArray(item.columns) && item.columns.length > 0
+          ? [...item.columns]
+          : Object.keys(rawData[0] || {});
+
+        const limit = Number(item.rowLimit) || 0;
+        finalRows = limit > 0 ? rawData.slice(0, limit) : [...rawData];
+      }
+
+      const colMeta = {};
+      displayCols.forEach(col => {
+        let isNum = false;
+        let maxVal = 0;
+        let sumVal = 0;
+        let hasValidNum = false;
+
+        for (let i = 0; i < finalRows.length; i++) {
+          const v = finalRows[i][col];
+          if (v !== null && v !== undefined && v !== '') {
+            const n = Number(v);
+            if (!isNaN(n)) {
+              hasValidNum = true;
+              if (Math.abs(n) > maxVal) maxVal = Math.abs(n);
+              sumVal += n;
+            }
+          }
+        }
+        isNum = hasValidNum && finalRows.every(r => {
+          const v = r[col];
+          return v === null || v === undefined || v === '' || !isNaN(Number(v));
+        });
+
+        colMeta[col] = { isNum, maxVal, sumVal };
+      });
+
+      if (item._searchText) {
+        const q = String(item._searchText).toLowerCase().trim();
+        finalRows = finalRows.filter(row => {
+          return displayCols.some(c => String(row[c] != null ? row[c] : '').toLowerCase().includes(q));
+        });
+      }
+
+      if (item._sortCol && displayCols.includes(item._sortCol)) {
+        const sCol = item._sortCol;
+        const sDir = item._sortDir === 'desc' ? -1 : 1;
+        const isNum = colMeta[sCol] && colMeta[sCol].isNum;
+
+        finalRows.sort((a, b) => {
+          const vA = a[sCol];
+          const vB = b[sCol];
+          if (isNum) {
+            const nA = Number(vA) || 0;
+            const nB = Number(vB) || 0;
+            return (nA - nB) * sDir;
+          }
+          return String(vA != null ? vA : '').localeCompare(String(vB != null ? vB : ''), 'vi') * sDir;
+        });
+      }
+
+      const pageSize = item.pageSize !== undefined ? Number(item.pageSize) : 20;
+      const totalCount = finalRows.length;
+      let totalPages = 1;
+      let curPage = item._page || 1;
+      let pagedRows = finalRows;
+
+      if (pageSize > 0) {
+        totalPages = Math.ceil(totalCount / pageSize) || 1;
+        if (curPage > totalPages) curPage = totalPages;
+        if (curPage < 1) curPage = 1;
+        item._page = curPage;
+        const startIdx = (curPage - 1) * pageSize;
+        pagedRows = finalRows.slice(startIdx, startIdx + pageSize);
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'db-superset-table-container density-' + (item.density || 'normal');
+
+      const showToolbar = item.showSearch !== false || item.showExport !== false;
+      if (showToolbar) {
+        const toolbar = document.createElement('div');
+        toolbar.className = 'dst-toolbar';
+
+        let searchHtml = '';
+        if (item.showSearch !== false) {
+          searchHtml = '<div class="dst-search-box">' +
+            '<span class="dst-search-icon">🔍</span>' +
+            '<input type="text" class="dst-search-input" placeholder="Tìm kiếm nhanh..." value="' + escapeHtml(item._searchText || '') + '" />' +
+            (item._searchText ? '<button class="dst-search-clear" title="Xóa tìm kiếm">✕</button>' : '') +
+          '</div>';
+        }
+
+        toolbar.innerHTML = '<div class="dst-toolbar-left">' +
+            searchHtml +
+            '<span class="dst-count-badge">' + totalCount + ' dòng</span>' +
+          '</div>' +
+          '<div class="dst-toolbar-right">' +
+            (item.showExport !== false ? '<button class="dst-export-btn" title="Xuất dữ liệu bảng ra file Excel/CSV">📥 Xuất Tệp</button>' : '') +
+          '</div>';
+
+        const sInput = toolbar.querySelector('.dst-search-input');
+        sInput && sInput.addEventListener('input', (e) => {
+          item._searchText = e.target.value;
+          item._page = 1;
+          renderSupersetTable(item, containerEl);
+        });
+
+        const clearBtn = toolbar.querySelector('.dst-search-clear');
+        clearBtn && clearBtn.addEventListener('click', () => {
+          item._searchText = '';
+          item._page = 1;
+          renderSupersetTable(item, containerEl);
+        });
+
+        const expBtn = toolbar.querySelector('.dst-export-btn');
+        expBtn && expBtn.addEventListener('click', () => {
+          exportSupersetTable(item, finalRows, displayCols);
+        });
+
+        wrapper.appendChild(toolbar);
+      }
+
+      const scrollArea = document.createElement('div');
+      scrollArea.className = 'dst-scroll-area';
+
+      const table = document.createElement('table');
+      table.className = 'db-superset-table';
+
+      const thead = document.createElement('thead');
+      let thsHtml = '';
+      if (item.showRowNumber !== false) {
+        thsHtml += '<th class="dst-th-stt">STT</th>';
+      }
+      displayCols.forEach(col => {
+        const isSorted = item._sortCol === col;
+        const arrow = isSorted ? (item._sortDir === 'desc' ? '▼' : '▲') : '↕';
+        const align = (colMeta[col] && colMeta[col].isNum) ? 'align-right' : 'align-left';
+        thsHtml += '<th class="' + align + ' ' + (isSorted ? 'sorted' : '') + '" data-col="' + escapeHtml(col) + '" title="Nhấn để sắp xếp theo cột ' + escapeHtml(col) + '">' +
+            '<span>' + escapeHtml(col) + '</span>' +
+            '<span class="dst-sort-icon">' + arrow + '</span>' +
+          '</th>';
+      });
+      thead.innerHTML = '<tr>' + thsHtml + '</tr>';
+
+      thead.querySelectorAll('th[data-col]').forEach(th => {
+        th.addEventListener('click', () => {
+          const col = th.dataset.col;
+          if (item._sortCol === col) {
+            item._sortDir = item._sortDir === 'desc' ? 'asc' : 'desc';
+          } else {
+            item._sortCol = col;
+            item._sortDir = 'desc';
+          }
+          renderSupersetTable(item, containerEl);
+        });
+      });
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      let rowsHtml = '';
+      pagedRows.forEach((row, rIdx) => {
+        const stt = pageSize > 0 ? ((curPage - 1) * pageSize + rIdx + 1) : (rIdx + 1);
+        let tdsHtml = '';
+        if (item.showRowNumber !== false) {
+          tdsHtml += '<td class="dst-td-stt">' + stt + '</td>';
+        }
+
+        displayCols.forEach(col => {
+          const val = row[col];
+          const isNum = colMeta[col] && colMeta[col].isNum;
+          let cellFormatted = val !== undefined && val !== null ? String(val) : '';
+          let barHtml = '';
+
+          if (isNum && val !== '' && val !== null && val !== undefined) {
+            const num = Number(val);
+            if (!isNaN(num)) {
+              cellFormatted = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(num);
+              if (item.showCellBars !== false && colMeta[col].maxVal > 0) {
+                const pct = Math.max(0, Math.min(100, Math.round((Math.abs(num) / colMeta[col].maxVal) * 100)));
+                barHtml = '<div class="dst-cell-bar" style="width:' + pct + '%;"></div>';
+              }
+            }
+          }
+
+          const align = isNum ? 'align-right' : 'align-left';
+          tdsHtml += '<td class="' + align + '">' +
+              barHtml +
+              '<span class="dst-cell-value">' + escapeHtml(cellFormatted) + '</span>' +
+            '</td>';
+        });
+
+        rowsHtml += '<tr>' + tdsHtml + '</tr>';
+      });
+
+      if (pagedRows.length === 0) {
+        rowsHtml = '<tr><td colspan="' + (displayCols.length + (item.showRowNumber !== false ? 1 : 0)) + '" style="text-align:center;padding:24px;color:var(--db-text-sub);font-style:italic;">Không tìm thấy kết quả phù hợp với từ khóa "' + escapeHtml(item._searchText || '') + '"</td></tr>';
+      }
+      tbody.innerHTML = rowsHtml;
+      table.appendChild(tbody);
+
+      if (item.showTotals !== false && finalRows.length > 0) {
+        const tfoot = document.createElement('tfoot');
+        let footTds = '';
+        if (item.showRowNumber !== false) {
+          footTds += '<td class="dst-td-stt">∑</td>';
+        }
+
+        displayCols.forEach((col, idx) => {
+          const isNum = colMeta[col] && colMeta[col].isNum;
+          if (idx === 0 && !isNum) {
+            footTds += '<td class="dst-total-label">Tổng cộng</td>';
+          } else if (isNum) {
+            const sum = finalRows.reduce((acc, r) => acc + (Number(r[col]) || 0), 0);
+            const formatted = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(sum);
+            footTds += '<td class="align-right dst-total-val">' + formatted + '</td>';
+          } else {
+            footTds += '<td></td>';
+          }
+        });
+
+        tfoot.innerHTML = '<tr>' + footTds + '</tr>';
+        table.appendChild(tfoot);
+      }
+
+      scrollArea.appendChild(table);
+      wrapper.appendChild(scrollArea);
+
+      if (pageSize > 0 && totalPages > 1) {
+        const pagEl = document.createElement('div');
+        pagEl.className = 'dst-pagination';
+        const startNum = (curPage - 1) * pageSize + 1;
+        const endNum = Math.min(curPage * pageSize, totalCount);
+
+        pagEl.innerHTML = '<span class="dst-page-info">Trang <strong>' + curPage + '</strong> / ' + totalPages + ' (Dòng ' + startNum + ' - ' + endNum + ' của ' + totalCount + ')</span>' +
+          '<div class="dst-page-btns">' +
+            '<button class="dst-pbtn dst-btn-first" ' + (curPage <= 1 ? 'disabled' : '') + ' title="Trang đầu">⏮</button>' +
+            '<button class="dst-pbtn dst-btn-prev" ' + (curPage <= 1 ? 'disabled' : '') + ' title="Trang trước">◀ Trước</button>' +
+            '<span style="font-weight:700;padding:0 4px;font-size:11px;">' + curPage + '</span>' +
+            '<button class="dst-pbtn dst-btn-next" ' + (curPage >= totalPages ? 'disabled' : '') + ' title="Trang sau">Sau ▶</button>' +
+            '<button class="dst-pbtn dst-btn-last" ' + (curPage >= totalPages ? 'disabled' : '') + ' title="Trang cuối">⏭</button>' +
+          '</div>';
+
+        const btnFirst = pagEl.querySelector('.dst-btn-first');
+        btnFirst && btnFirst.addEventListener('click', () => {
+          item._page = 1;
+          renderSupersetTable(item, containerEl);
+        });
+        const btnPrev = pagEl.querySelector('.dst-btn-prev');
+        btnPrev && btnPrev.addEventListener('click', () => {
+          if (curPage > 1) {
+            item._page = curPage - 1;
+            renderSupersetTable(item, containerEl);
+          }
+        });
+        const btnNext = pagEl.querySelector('.dst-btn-next');
+        btnNext && btnNext.addEventListener('click', () => {
+          if (curPage < totalPages) {
+            item._page = curPage + 1;
+            renderSupersetTable(item, containerEl);
+          }
+        });
+        const btnLast = pagEl.querySelector('.dst-btn-last');
+        btnLast && btnLast.addEventListener('click', () => {
+          item._page = totalPages;
+          renderSupersetTable(item, containerEl);
+        });
+
+        wrapper.appendChild(pagEl);
+      }
+
+      containerEl.appendChild(wrapper);
     }
 
     function renderItemContent(item) {
@@ -5934,7 +7621,15 @@ ${expectedOutput}
         chartDiv.id = 'chart_el_' + item.id;
         body.appendChild(chartDiv);
 
-        setTimeout(() => {
+        const initChart = (retries = 0) => {
+          if (typeof echarts === 'undefined') {
+            if (retries < 40) {
+              setTimeout(() => initChart(retries + 1), 50);
+              return;
+            }
+            chartDiv.innerHTML = '<div class="db-chart-error-banner">⚠️ Đang tải hoặc không thể kết nối thư viện ECharts. Vui lòng kiểm tra lại mạng.</div>';
+            return;
+          }
           let chart = echarts.getInstanceByDom(chartDiv);
           if (chart) chart.dispose();
           chart = echarts.init(chartDiv, null);
@@ -5948,7 +7643,8 @@ ${expectedOutput}
           } else if (option && Object.keys(option).length > 0) {
             chart.setOption(option, true);
           }
-        }, 30);
+        };
+        setTimeout(initChart, 30);
       } else if (item.type === 'shape') {
         const sType = item.shapeType || 'rectangle';
         const bg = item.bgColor || '#ffffff';
@@ -6046,6 +7742,8 @@ ${expectedOutput}
         const opacity = item.opacity !== undefined ? (item.opacity / 100) : 1;
 
         body.innerHTML = '<div class="db-frame-container" style="background:' + bg + ';border:' + border + ';border-radius:' + radius + ';box-shadow:' + shadow + ';opacity:' + opacity + ';padding:8px;font-size:12px;color:var(--db-text-sub);font-style:italic;">[Khung phân vùng: ' + escapeHtml(item.name) + ']</div>';
+      } else if (item.type === 'table') {
+        renderSupersetTable(item, body);
       } else if (item.type === 'image') {
         body.innerHTML = '<div class="db-image-widget"><img src="' + (item.imageUrl || '') + '" alt="' + escapeHtml(item.name || 'Ảnh') + '" style="border-radius:' + (item.borderRadius || 6) + 'px;object-fit:' + (item.fit || 'contain') + ';" /></div>';
       } else if (item.type === 'filter') {
@@ -6517,10 +8215,12 @@ ${expectedOutput}
         canvas.style.transformOrigin = 'top center';
         canvas.style.marginBottom = '0px';
       }
-      document.querySelectorAll('.db-chart-canvas').forEach(el => {
-        const c = echarts.getInstanceByDom(el);
-        if (c) c.resize();
-      });
+      if (typeof echarts !== 'undefined' && echarts.getInstanceByDom) {
+        document.querySelectorAll('.db-chart-canvas').forEach(el => {
+          const c = echarts.getInstanceByDom(el);
+          if (c) c.resize();
+        });
+      }
     }
 
     // Dynamic Excel File Upload Handler
@@ -6650,7 +8350,13 @@ ${expectedOutput}
     // Initial render
     renderAllTabs();
     renderCanvas();
+    updateCanvasTransform();
     updateTopFilterBarStickyPosition();
+
+    window.addEventListener('load', () => {
+      updateCanvasTransform();
+      updateTopFilterBarStickyPosition();
+    });
   <\/script>
 </body>
 </html>`;
@@ -6787,7 +8493,8 @@ ${expectedOutput}
   }
 
   function exportStandaloneHtml() {
-    const htmlFileName = 'index.html';
+    const cleanTitle = (DashboardState.present.title || 'Dashboard').trim().replace(/[/\\?%*:|"<>]/g, '_');
+    const htmlFileName = (cleanTitle || 'Dashboard') + '.html';
     const htmlContent = generateStandaloneDashboardHTML();
 
     downloadBlob(new Blob([htmlContent], { type: 'text/html;charset=utf-8' }), htmlFileName);
@@ -9309,6 +11016,23 @@ ${expectedOutput}
         }
       });
 
+      // --- Table Controls ---
+      document.getElementById('fpsBtnOpenTableStudio')?.addEventListener('click', () => {
+        const item = this.getItem();
+        if (item && item.type === 'table') {
+          WidgetConfigModal.open('table', item.id);
+        }
+      });
+      document.getElementById('fpsTableSourceSelect')?.addEventListener('change', (e) => {
+        const item = this.getItem();
+        if (!item || item.type !== 'table') return;
+        DashboardState.pushSnapshot();
+        item.dataSourceKey = e.target.value;
+        item.columns = DataStore.getColumns(item.dataSourceKey).slice(0, 8);
+        renderCanvas();
+        triggerDebouncedAutoSave();
+      });
+
       // --- KPI Controls ---
       document.getElementById('fpsKpiMetricSelect')?.addEventListener('change', (e) => {
         const item = this.getItem();
@@ -9703,6 +11427,7 @@ ${expectedOutput}
       if (!item) return;
 
       const isChart = item.type === 'chart';
+      const isTable = item.type === 'table';
       const isKpi = item.type === 'kpi';
       const isFilter = item.type === 'filter';
       const isHeading = item.type === 'heading';
@@ -9723,6 +11448,7 @@ ${expectedOutput}
 
       if (typeIcon) {
         if (isChart) typeIcon.textContent = '📊';
+        else if (isTable) typeIcon.textContent = '📋';
         else if (isKpi) typeIcon.textContent = '📈';
         else if (isFilter) typeIcon.textContent = '🔍';
         else if (isHeading) typeIcon.textContent = '🏷️';
@@ -9738,6 +11464,7 @@ ${expectedOutput}
       if (title) {
         title.textContent = item.name || (
           isChart ? 'Biểu Đồ ECharts' :
+          isTable ? 'Bảng Dữ Liệu Superset' :
           isKpi ? 'Chỉ Số KPI' :
           isFilter ? 'Bộ Lọc' :
           isHeading ? 'Tiêu Đề' :
@@ -9750,6 +11477,7 @@ ${expectedOutput}
 
       if (subtitle) {
         if (isChart) subtitle.textContent = 'ECharts Code & Nguồn Dữ Liệu';
+        else if (isTable) subtitle.textContent = 'Bảng HTML Tối Ưu (Chuẩn Superset)';
         else if (isKpi) subtitle.textContent = 'Chỉ Số Tổng Hợp Tự Động';
         else if (isFilter) subtitle.textContent = 'Bộ Lọc Tương Tác Dữ Liệu';
         else if (isHeading) subtitle.textContent = 'Tiêu Đề Báo Cáo / Khu Vực';
@@ -9785,6 +11513,9 @@ ${expectedOutput}
       const secChart = document.getElementById('fpsSectionChart');
       if (secChart) secChart.style.display = isChart ? 'block' : 'none';
 
+      const secTable = document.getElementById('fpsSectionTable');
+      if (secTable) secTable.style.display = isTable ? 'block' : 'none';
+
       const secKpi = document.getElementById('fpsSectionKpi');
       if (secKpi) secKpi.style.display = isKpi ? 'block' : 'none';
 
@@ -9813,7 +11544,7 @@ ${expectedOutput}
       if (secLine) secLine.style.display = isLine ? 'flex' : 'none';
 
       const secShadow = document.getElementById('fpsSectionShadow');
-      if (secShadow) secShadow.style.display = (isShape || isFrame || isChart || isKpi) ? 'block' : 'none';
+      if (secShadow) secShadow.style.display = (isShape || isFrame || isChart || isKpi || isTable) ? 'block' : 'none';
 
       // Synchronize Chart section
       if (isChart) {
@@ -9822,6 +11553,20 @@ ${expectedOutput}
           const sources = DataStore.getAvailableSources();
           srcSelect.innerHTML = sources.map(s => `<option value="${escapeHtml(s.key)}">${escapeHtml(s.label)}</option>`).join('');
           if (item.dataSourceKey) srcSelect.value = item.dataSourceKey;
+        }
+      }
+
+      // Synchronize Table section
+      if (isTable) {
+        const srcSelect = document.getElementById('fpsTableSourceSelect');
+        if (srcSelect) {
+          const sources = DataStore.getAvailableSources();
+          srcSelect.innerHTML = sources.map(s => `<option value="${escapeHtml(s.key)}">${escapeHtml(s.label)}</option>`).join('');
+          if (item.dataSourceKey) srcSelect.value = item.dataSourceKey;
+        }
+        const badge = document.getElementById('fpsTableModeBadge');
+        if (badge) {
+          badge.textContent = item.queryMode === 'aggregate' ? '📊 Tổng Hợp Phân Nhóm (Group By)' : '📄 Bản Ghi Chi Tiết (Raw Records)';
         }
       }
 
@@ -11987,6 +13732,8 @@ ${expectedOutput}
           [Khung phân vùng: ${escapeHtml(item.name)}]
         </div>
       `;
+    } else if (item.type === 'table') {
+      renderSupersetTable(item, body);
     }
   }
 
@@ -12733,6 +14480,11 @@ ${expectedOutput}
       addChartToCanvas();
     });
 
+    document.getElementById('menuAddTable')?.addEventListener('click', () => {
+      addElementsDropdown?.classList.remove('open');
+      WidgetConfigModal.open('table');
+    });
+
     document.getElementById('menuAddFilter')?.addEventListener('click', () => {
       addElementsDropdown?.classList.remove('open');
       WidgetConfigModal.open('filter');
@@ -13449,10 +15201,18 @@ ${expectedOutput}
       } else if (action === 'edit-widget') {
         const item = DashboardState.present.items.find(i => i.id === itemId);
         if (item) {
-          DashboardState.selectedItemId = itemId;
-          document.querySelectorAll('.db-item-box').forEach(b => b.classList.remove('selected'));
-          document.getElementById(`item_${itemId}`)?.classList.add('selected');
-          FigmaPropertiesSidebar.open(itemId);
+          if (item.type === 'table') {
+            WidgetConfigModal.open('table', item.id);
+          } else if (item.type === 'filter') {
+            WidgetConfigModal.open('filter', item.id);
+          } else if (item.type === 'kpi' || item.type === 'button' || item.type === 'frame') {
+            WidgetConfigModal.open(item.type, item.id);
+          } else {
+            DashboardState.selectedItemId = itemId;
+            document.querySelectorAll('.db-item-box').forEach(b => b.classList.remove('selected'));
+            document.getElementById(`item_${itemId}`)?.classList.add('selected');
+            FigmaPropertiesSidebar.open(itemId);
+          }
         }
       } else if (action === 'toggle-header') {
         const item = DashboardState.present.items.find(i => i.id === itemId);
