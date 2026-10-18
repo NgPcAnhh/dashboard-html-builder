@@ -470,8 +470,52 @@
 
     getAvailableSources() {
       const list = [];
+      const fileNames = Object.keys(this.files);
+      let totalAllRows = 0;
+      let totalSheetsCount = 0;
+
       for (const fileName in this.files) {
         const fileObj = this.files[fileName];
+        for (const sheetName in fileObj.sheets) {
+          const sheet = fileObj.sheets[sheetName];
+          totalAllRows += sheet ? (sheet.length !== undefined ? sheet.length : (sheet.rowCount || 0)) : 0;
+          totalSheetsCount++;
+        }
+      }
+
+      // Tùy chọn 1: Tất Cả Các File Đã Nạp
+      if (fileNames.length > 0) {
+        list.push({
+          fileName: '__ALL_FILES__',
+          sheetName: '',
+          key: '__ALL_FILES__',
+          label: `🌐 Tất Cả Các File Đã Nạp (${fileNames.length} file, ${totalSheetsCount} sheet, ${totalAllRows.toLocaleString('vi-VN')} dòng)`,
+          type: 'all_files'
+        });
+      }
+
+      // Tùy chọn 2: Từng File (Tất Cả Sheet) & Tùy chọn 3: Từng Sheet riêng
+      for (const fileName in this.files) {
+        const fileObj = this.files[fileName];
+        const sheetNames = Object.keys(fileObj.sheets || {});
+        let totalFileRows = 0;
+        sheetNames.forEach(sName => {
+          const sheet = fileObj.sheets[sName];
+          totalFileRows += sheet ? (sheet.length !== undefined ? sheet.length : (sheet.rowCount || 0)) : 0;
+        });
+
+        // Nếu file có từ 2 sheet trở lên (hoặc bất kỳ file nào), thêm tùy chọn Tất Cả Sheet của File
+        if (sheetNames.length > 1) {
+          list.push({
+            fileName,
+            sheetName: '__ALL_SHEETS__',
+            key: `${fileName}::__ALL_SHEETS__`,
+            label: `📚 ${fileName} » Tất Cả Các Sheet (${sheetNames.length} sheet, ${totalFileRows.toLocaleString('vi-VN')} dòng)`,
+            type: 'all_sheets'
+          });
+        }
+
+        // Từng sheet đơn lẻ
         for (const sheetName in fileObj.sheets) {
           const sheet = fileObj.sheets[sheetName];
           const count = sheet ? (sheet.length !== undefined ? sheet.length : (sheet.rowCount || 0)) : 0;
@@ -479,7 +523,8 @@
             fileName,
             sheetName,
             key: `${fileName}::${sheetName}`,
-            label: `${fileName} » ${sheetName} (${count.toLocaleString('vi-VN')} dòng)`
+            label: `📄 ${fileName} » ${sheetName} (${count.toLocaleString('vi-VN')} dòng)`,
+            type: 'sheet'
           });
         }
       }
@@ -490,6 +535,7 @@
       if (!fileKey && fallbackCol) {
         const sources = this.getAvailableSources();
         const found = sources.find(s => {
+          if (s.key === '__ALL_FILES__' || s.key.endsWith('::__ALL_SHEETS__')) return false;
           const raw = (this.files[s.fileName]?.sheets?.[s.sheetName]);
           if (!raw) return false;
           if (raw.__columns && raw.__columns.includes(fallbackCol)) return true;
@@ -504,6 +550,41 @@
       }
       if (!fileKey) return [];
 
+      // Trường hợp 0: Tất Cả Các File Đã Nạp
+      if (fileKey === '__ALL_FILES__') {
+        const combined = [];
+        for (const fn in this.files) {
+          const fileObj = this.files[fn];
+          for (const sn in fileObj.sheets) {
+            const raw = this.uncompactRows(fileObj.sheets[sn]);
+            if (Array.isArray(raw)) {
+              for (let i = 0; i < raw.length; i++) {
+                combined.push(raw[i]);
+              }
+            }
+          }
+        }
+        return combined;
+      }
+
+      // Trường hợp 0.5: Tất Cả Các Sheet của 1 file cụ thể
+      if (String(fileKey).endsWith('::__ALL_SHEETS__')) {
+        const fn = String(fileKey).replace('::__ALL_SHEETS__', '');
+        const fileObj = this.files[fn];
+        if (fileObj && fileObj.sheets) {
+          const combined = [];
+          for (const sn in fileObj.sheets) {
+            const raw = this.uncompactRows(fileObj.sheets[sn]);
+            if (Array.isArray(raw)) {
+              for (let i = 0; i < raw.length; i++) {
+                combined.push(raw[i]);
+              }
+            }
+          }
+          return combined;
+        }
+      }
+
       const parts = String(fileKey).split('::');
       const fileName = parts[0];
       const sheetName = parts[1];
@@ -515,7 +596,7 @@
           this.files[fileName].sheets[sheetName] = ParquetEngine.createVirtualArray(rawSheet);
           return this.files[fileName].sheets[sheetName];
         }
-        return rawSheet;
+        return this.uncompactRows(rawSheet);
       }
 
       // Trường hợp 2: fileKey chỉ là fileName (lấy sheet đầu tiên)
@@ -527,7 +608,7 @@
             this.files[fileName].sheets[sKeys[0]] = ParquetEngine.createVirtualArray(rawSheet);
             return this.files[fileName].sheets[sKeys[0]];
           }
-          return rawSheet;
+          return this.uncompactRows(rawSheet);
         }
       }
 
@@ -539,7 +620,7 @@
             this.files[fn].sheets[fileKey] = ParquetEngine.createVirtualArray(rawSheet);
             return this.files[fn].sheets[fileKey];
           }
-          return rawSheet;
+          return this.uncompactRows(rawSheet);
         }
       }
 
@@ -608,6 +689,35 @@
     },
 
     getColumns(fileKey) {
+      if (fileKey === '__ALL_FILES__') {
+        const colSet = new Set();
+        for (const fn in this.files) {
+          const fileObj = this.files[fn];
+          for (const sn in fileObj.sheets) {
+            const raw = this.uncompactRows(fileObj.sheets[sn]);
+            if (raw && raw.length > 0 && raw[0]) {
+              Object.keys(raw[0]).forEach(c => colSet.add(c));
+            }
+          }
+        }
+        return Array.from(colSet);
+      }
+
+      if (String(fileKey).endsWith('::__ALL_SHEETS__')) {
+        const fn = String(fileKey).replace('::__ALL_SHEETS__', '');
+        const fileObj = this.files[fn];
+        if (fileObj && fileObj.sheets) {
+          const colSet = new Set();
+          for (const sn in fileObj.sheets) {
+            const raw = this.uncompactRows(fileObj.sheets[sn]);
+            if (raw && raw.length > 0 && raw[0]) {
+              Object.keys(raw[0]).forEach(c => colSet.add(c));
+            }
+          }
+          return Array.from(colSet);
+        }
+      }
+
       const rows = this.getData(fileKey);
       if (!rows || rows.length === 0) return [];
       if (rows.__columns) return rows.__columns;
@@ -945,7 +1055,7 @@
         delete sessionObj.embeddedData;
         try {
           localStorage.setItem('mb_dashboard_last_edited_session', JSON.stringify(sessionObj));
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // Lưu siêu dữ liệu các file trong DataStore nếu có
@@ -962,7 +1072,7 @@
         }
         try {
           localStorage.setItem('mb_dashboard_last_files_data', JSON.stringify(filesMeta));
-        } catch (_) {}
+        } catch (_) { }
       }
     } catch (e) {
       console.warn('Auto-save session to localStorage failed:', e);
@@ -1319,19 +1429,83 @@
     return checkedCount > 0 && (validDateCount / checkedCount) >= 0.6;
   }
 
-  function getFilteredData(sourceKey = null, excludeCols = [], targetTabId = null) {
+  // ===========================================================================
+  // 3.1. HỆ THỐNG PHẠM VI BỘ LỌC (TARGET TAB & TARGET CHARTS SCOPE ENGINE)
+  // Cho phép filter trỏ vào các chart cụ thể hoặc mọi chart trong tab chỉ định
+  // ===========================================================================
+  function getApplicableFilters(targetTabId = null, targetChartId = null, excludeCols = []) {
+    const tabId = targetTabId || DashboardState.present?.activeTabId || 'default';
+    const applicableFilters = {};
+
+    const filterItems = (DashboardState.present?.items || []).filter(i => i && i.type === 'filter');
+
+    if (filterItems.length > 0) {
+      filterItems.forEach(filterItem => {
+        const col = filterItem.filterColumn;
+        if (!col || excludeCols.includes(col)) return;
+
+        // 1. Kiểm tra phạm vi Tab (Target Tab)
+        const homeTabId = filterItem.tabId || 'default';
+        const targetTab = filterItem.targetTab || 'current';
+        let matchesTab = false;
+
+        if (targetTab === 'all') {
+          matchesTab = true;
+        } else if (targetTab === 'current' || !targetTab) {
+          matchesTab = (tabId === homeTabId);
+        } else {
+          matchesTab = (tabId === targetTab);
+        }
+
+        if (!matchesTab) return;
+
+        // 2. Kiểm tra phạm vi Biểu đồ (Target Charts)
+        if (targetChartId) {
+          const targetScope = filterItem.targetScope || 'all';
+          const targetChartIds = Array.isArray(filterItem.targetChartIds) ? filterItem.targetChartIds : [];
+
+          if (targetScope === 'custom' && targetChartIds.length > 0) {
+            if (!targetChartIds.includes(targetChartId)) {
+              // Biểu đồ này không nằm trong danh sách áp dụng của bộ lọc -> BỎ QUA
+              return;
+            }
+          }
+        }
+
+        // 3. Lấy giá trị lọc hiện tại
+        let filterVal = filterItem.currentFilterValue;
+        if (filterVal === undefined) {
+          const tabFiltersMap = DashboardState.tabFilters?.[homeTabId] || {};
+          filterVal = tabFiltersMap[col] !== undefined ? tabFiltersMap[col] : DashboardState.activeFilters?.[col];
+        }
+
+        if (filterVal !== undefined && filterVal !== null) {
+          applicableFilters[col] = filterVal;
+        }
+      });
+    }
+
+    // Fallback: nếu chưa có bộ lọc nào từ filterItems nhưng có tabFilters/activeFilters
+    if (Object.keys(applicableFilters).length === 0 && !targetChartId) {
+      const fallbackFilters = DashboardState.tabFilters?.[tabId] || (tabId === DashboardState.present?.activeTabId ? DashboardState.activeFilters : {}) || {};
+      for (const k in fallbackFilters) {
+        if (!excludeCols.includes(k) && fallbackFilters[k] !== undefined && fallbackFilters[k] !== null) {
+          applicableFilters[k] = fallbackFilters[k];
+        }
+      }
+    }
+
+    return applicableFilters;
+  }
+
+  function getFilteredData(sourceKey = null, excludeCols = [], targetTabId = null, targetChartId = null) {
     let rows = DataStore.getData(sourceKey);
     if (!rows || rows.length === 0) return [];
 
-    const tabId = targetTabId || DashboardState.present.activeTabId || 'default';
-    let filters = {};
-    if (DashboardState.tabFilters && DashboardState.tabFilters[tabId]) {
-      filters = DashboardState.tabFilters[tabId];
-    } else if (tabId === DashboardState.present.activeTabId) {
-      filters = DashboardState.activeFilters || {};
-    }
+    const tabId = targetTabId || DashboardState.present?.activeTabId || 'default';
+    const filters = getApplicableFilters(tabId, targetChartId, excludeCols);
 
-    const filterKeys = Object.keys(filters).filter(k => !excludeCols.includes(k));
+    const filterKeys = Object.keys(filters);
     if (filterKeys.length === 0) return rows;
 
     return rows.filter(row => {
@@ -1520,14 +1694,14 @@
     });
   }
 
-  function getFilteredFilesObject(targetTabId = null) {
+  function getFilteredFilesObject(targetTabId = null, targetChartId = null) {
     const allFiles = DataStore.getAllFilesObject();
     const filtered = {};
     const tabId = targetTabId || DashboardState.present.activeTabId || 'default';
     for (const fileName in allFiles) {
       filtered[fileName] = {};
       for (const sheetName in allFiles[fileName]) {
-        filtered[fileName][sheetName] = getFilteredData(`${fileName}::${sheetName}`, [], tabId);
+        filtered[fileName][sheetName] = getFilteredData(`${fileName}::${sheetName}`, [], tabId, targetChartId);
       }
     }
     return filtered;
@@ -1540,8 +1714,8 @@
     if (!option || typeof option !== 'object') return option;
 
     let hasHeavyData = false;
-    const seriesList = Array.isArray(option.series) 
-      ? option.series 
+    const seriesList = Array.isArray(option.series)
+      ? option.series
       : (option.series && typeof option.series === 'object' ? [option.series] : []);
 
     seriesList.forEach(s => {
@@ -1615,12 +1789,13 @@
     try {
       const allFiles = DataStore.getAllFilesObject();
       const tabId = context.tabId || DashboardState.present.activeTabId || 'default';
-      const filteredFiles = getFilteredFilesObject(tabId);
+      const chartId = context.chartId || null;
+      const filteredFiles = getFilteredFilesObject(tabId, chartId);
 
       // Dữ liệu mặc định: dùng optionalData nếu được truyền (kể cả mảng rỗng []), nếu không thì gọi getFilteredData()
       let defaultData = optionalData;
       if (defaultData === null || defaultData === undefined) {
-        defaultData = getFilteredData(null, [], tabId);
+        defaultData = getFilteredData(null, [], tabId, chartId);
       }
 
       // Hàm tiện ích getSheet(sheetName, fileName?) cho người dùng gọi trong code -> TRẢ VỀ DỮ LIỆU ĐÃ LỌC
@@ -2228,6 +2403,99 @@ const option = {
 };
 
 return option;`;
+    },
+
+    interactive_html_overlay(sourceKey = null) {
+      const cols = this._getCols(sourceKey);
+      const catCol = cols.includes('Tháng') ? 'Tháng' : (cols[1] || cols[0] || 'Danh Mục');
+      const m1 = cols.includes('Doanh Thu') ? 'Doanh Thu' : (cols[3] || 'Doanh Thu');
+      const m2 = cols.includes('Lợi Nhuận') ? 'Lợi Nhuận' : (cols[4] || 'Lợi Nhuận');
+
+      return `// 💡 TẠO NÚT BẤM / PHÍM CHỨC NĂNG BẰNG HTML/CSS/JS (DOM OVERLAY)
+// Cho phép dựng giao diện nút bấm HTML/CSS tùy biến hoàn toàn (nút bấm, badge, dropdown) đặt nổi trên biểu đồ!
+
+const categories = data.map(r => r['${catCol}']);
+const val1 = data.map(r => Number(r['${m1}']) || 0);
+const val2 = data.map(r => Number(r['${m2}']) || 0);
+
+let activeMetric = '${m1}';
+let chartType = 'bar';
+
+// 1. Tạo hoặc cập nhật thanh công cụ HTML/CSS nổi trên mặt biểu đồ
+const chartDom = myChart.getDom();
+if (chartDom) {
+  chartDom.style.position = 'relative';
+
+  // Xóa overlay cũ nếu có (tránh trùng lặp khi re-render hoặc cross-filter)
+  const oldControls = chartDom.querySelector('.chart-html-controls-overlay');
+  if (oldControls) oldControls.remove();
+
+  const controls = document.createElement('div');
+  controls.className = 'chart-html-controls-overlay';
+  controls.style.cssText = 'position:absolute;top:8px;right:12px;z-index:10;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.92);backdrop-filter:blur(8px);border:1px solid #cbd5e1;border-radius:8px;padding:4px 6px;box-shadow:0 2px 8px rgba(0,0,0,0.06);';
+
+  controls.innerHTML = '<button class="html-cbtn btn-m1" style="border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;background:#0284c7;color:#fff;">📊 ' + '${m1}' + '</button>' +
+    '<button class="html-cbtn btn-m2" style="border:none;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;background:#f1f5f9;color:#334155;">💰 ' + '${m2}' + '</button>' +
+    '<button class="html-cbtn btn-toggle" style="border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;background:#fff;color:#0f172a;">📈 Đổi Cột/Đường</button>';
+
+  // Gán sự kiện JS tương tác trực tiếp với myChart
+  const btn1 = controls.querySelector('.btn-m1');
+  const btn2 = controls.querySelector('.btn-m2');
+  const btnToggle = controls.querySelector('.btn-toggle');
+
+  btn1.onclick = () => {
+    activeMetric = '${m1}';
+    btn1.style.background = '#0284c7'; btn1.style.color = '#fff';
+    btn2.style.background = '#f1f5f9'; btn2.style.color = '#334155';
+    myChart.setOption({
+      title: { text: 'Phân Tích: ' + activeMetric },
+      series: [{ name: activeMetric, type: chartType, data: val1, itemStyle: { color: '#0284c7' } }]
+    });
+  };
+
+  btn2.onclick = () => {
+    activeMetric = '${m2}';
+    btn2.style.background = '#10b981'; btn2.style.color = '#fff';
+    btn1.style.background = '#f1f5f9'; btn1.style.color = '#334155';
+    myChart.setOption({
+      title: { text: 'Phân Tích: ' + activeMetric },
+      series: [{ name: activeMetric, type: chartType, data: val2, itemStyle: { color: '#10b981' } }]
+    });
+  };
+
+  btnToggle.onclick = () => {
+    chartType = chartType === 'bar' ? 'line' : 'bar';
+    const curData = activeMetric === '${m1}' ? val1 : val2;
+    const curColor = activeMetric === '${m1}' ? '#0284c7' : '#10b981';
+    myChart.setOption({
+      series: [{ type: chartType, smooth: true, data: curData, itemStyle: { color: curColor }, lineStyle: { width: 3 } }]
+    });
+  };
+
+  chartDom.appendChild(controls);
+}
+
+// 2. Cấu hình Option ECharts
+return {
+  title: {
+    text: 'Phân Tích: ' + activeMetric,
+    subtext: 'Bấm các nút HTML/CSS overlay trên góc phải để tương tác',
+    textStyle: { color: '#0f172a', fontSize: 13, fontWeight: 700 },
+    subtextStyle: { color: '#64748b', fontSize: 11 }
+  },
+  tooltip: { trigger: 'axis', valueFormatter: v => new Intl.NumberFormat('vi-VN').format(v) },
+  grid: { left: '4%', right: '4%', bottom: '10%', top: '22%', containLabel: true },
+  xAxis: { type: 'category', data: categories, axisLabel: { color: '#64748b' } },
+  yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } }, axisLabel: { color: '#64748b' } },
+  series: [
+    {
+      name: activeMetric,
+      type: chartType,
+      data: val1,
+      itemStyle: { color: '#0284c7', borderRadius: [4, 4, 0, 0] }
+    }
+  ]
+};`;
     }
   };
 
@@ -2235,6 +2503,14 @@ return option;`;
   // 5. CHART CODE STUDIO MODAL (CHUẨN 100% GIAO DIỆN ECHARTS VISUALIZER)
   // ===========================================================================
   const CORPORATE_CHART_PRESETS = [
+    {
+      id: 'interactive-html-overlay',
+      name: 'Biểu Đồ Phím Bấm HTML/CSS/JS (DOM Overlay)',
+      icon: '🎛️',
+      category: 'Tương Tác Nâng Cao',
+      desc: 'Tạo thanh nút bấm HTML/CSS thực tế nổi trên góc biểu đồ, gán JS onclick tương tác gọi myChart.setOption tùy biến tự do.',
+      generator: () => ChartTemplates.interactive_html_overlay()
+    },
     {
       id: 'interactive-buttons',
       name: 'Biểu Đồ Tương Tác Phím Chức Năng (Graphic Buttons)',
@@ -2784,9 +3060,9 @@ return option;`;
               <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">Bấm cột để chép:</span>
               <div style="display:flex;flex-wrap:wrap;gap:4px;overflow-x:auto;">
                 ${cols.map(c => {
-                  const escaped = c.replace(/'/g, "\\'");
-                  return `<span class="ce-hint-tag" title="Click để sao chép tên cột '${escaped}'" data-copy="${escaped}" style="cursor:pointer;font-size:10.5px;padding:2px 6px;border-radius:3px;background:rgba(56,189,248,0.12);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);"><code>${c}</code></span>`;
-                }).join('')}
+          const escaped = c.replace(/'/g, "\\'");
+          return `<span class="ce-hint-tag" title="Click để sao chép tên cột '${escaped}'" data-copy="${escaped}" style="cursor:pointer;font-size:10.5px;padding:2px 6px;border-radius:3px;background:rgba(56,189,248,0.12);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);"><code>${c}</code></span>`;
+        }).join('')}
               </div>
             </div>
           </div>
@@ -2812,11 +3088,11 @@ return option;`;
                   <tr>
                     <td class="ce-td-idx">${idx + 1}</td>
                     ${cols.map(c => {
-                      const val = r[c];
-                      const isNum = typeof val === 'number' || (!isNaN(val) && val !== '' && val !== null && typeof val !== 'boolean');
-                      const displayVal = (val === null || val === undefined || val === '') ? '<span class="ce-cell-empty">—</span>' : (typeof val === 'number' ? val.toLocaleString('vi-VN') : String(val));
-                      return `<td class="${isNum && val !== '' ? 'ce-cell-num' : ''}" title="${String(val ?? '')}">${displayVal}</td>`;
-                    }).join('')}
+            const val = r[c];
+            const isNum = typeof val === 'number' || (!isNaN(val) && val !== '' && val !== null && typeof val !== 'boolean');
+            const displayVal = (val === null || val === undefined || val === '') ? '<span class="ce-cell-empty">—</span>' : (typeof val === 'number' ? val.toLocaleString('vi-VN') : String(val));
+            return `<td class="${isNum && val !== '' ? 'ce-cell-num' : ''}" title="${String(val ?? '')}">${displayVal}</td>`;
+          }).join('')}
                   </tr>
                 `).join('')}
               </tbody>
@@ -2999,24 +3275,72 @@ return option;`;
 BẠN LÀ CHUYÊN GIA SENIOR DATA VISUALIZATION VÀ LẬP TRÌNH APACHE ECHARTS 5 JAVASCRIPT.
 HÃY VIẾT DUY NHẤT MÃ JAVASCRIPT CHUẨN XÁC ĐỂ XỬ LÝ DỮ LIỆU EXCEL VÀ RETURN VỀ OBJECT OPTION ECHARTS.
 
+---
 1. THÔNG TIN DỮ LIỆU ĐẦU VÀO:
 - ${schemaDesc}
 ${inputExtra ? `- Ghi chú bổ sung: ${inputExtra}` : ''}
 
+---
 2. YÊU CẦU NGHIỆP VỤ & TỔNG HỢP:
 ${bizLogic}
 
+---
 3. KIỂU BIỂU ĐỒ & KẾT QUẢ ĐẦU RA MONG MUỐN:
 ${expectedOutput}
 
-4. NGUYÊN TẮC BẮT BUỘC (CRITICAL CONTRACT):
-- Chỉ dùng JavaScript thuần chạy trên trình duyệt.
-- Dữ liệu đã có sẵn trong biến toàn cục 'data' (mảng các object của sheet).
-- Trích xuất dữ liệu: const categories = data.map(r => r['Tên Cột X']);
-- Luôn ép kiểu số an toàn: Number(r['Tên Cột Y']) || 0.
-- Nếu cần lấy sheet khác: const rows = getSheet('TênSheetKhác');
-- Kết thúc mã code bằng lệnh: return { ...cấu hình option ECharts... };
-- KHÔNG bọc mã trong hàm không trả về, KHÔNG giải thích, KHÔNG viết văn bản chào hỏi.`;
+---
+4. BẮT BUỘC COMMENT ĐẦY ĐỦ ĐỂ DỄ BẢO TRÌ (CODE MAINTENANCE & CLEAN CODE):
+- Mã nguồn BẮT BUỘC phải có comment tiếng Việt chi tiết, rõ ràng từng phân đoạn chức năng:
+  * // ==========================================
+  * // 1. TRÍCH XUẤT VÀ LÀM SẠCH DỮ LIỆU ĐẦU VÀO: Chú thích việc đọc từ biến 'data', kiểm tra null/undefined, ép kiểu Number an toàn.
+  * // 2. GOM NHÓM (AGGREGATE) & TÍNH TOÁN NGHIỆP VỤ: Chú thích rõ công thức (SUM, AVG, COUNT, tỷ lệ %), logic Map/Reduce, sắp xếp Top.
+  * // 3. THIẾT LẬP CẤU HÌNH OPTION ECHARTS: Chú thích màu sắc gradient, tooltip format tiền tệ VNĐ/%, trục X/Y, bo góc cột, toolbox.
+  * // 4. HIỆU ỨNG TƯƠNG TÁC CLICK & LỌC CHÉO (NẾU CÓ): Chú thích rõ cách bắt sự kiện click, hủy lọc khi click lại, chống double event.
+- Đặt tên biến tường minh, phản ánh đúng ý nghĩa nghiệp vụ (ví dụ: totalRevenue, salesByCategory, topBranches, categories), TUYỆT ĐỐI KHÔNG dùng tên tắt khó hiểu (a, b, t1, x).
+
+---
+5. QUY CHUẨN HIỆU ỨNG CLICK TƯƠNG TÁC TRÊN BIỂU ĐỒ (CHART CLICK & CROSS-FILTERING):
+Khi biểu đồ có yêu cầu tương tác click hoặc lọc chéo dữ liệu, BẮT BUỘC tuân thủ các quy tắc sau:
+- Click vào phần tử dữ liệu (Cột, Lát bánh Pie, Điểm đường Line, Thanh ngang...):
+  * Dùng cú pháp:
+    \`\`\`javascript
+    // Chống nhân bản sự kiện (double firing) khi biểu đồ render lại hoặc khi lọc dữ liệu
+    if (myChart && myChart.off) {
+      myChart.off('click');
+      myChart.on('click', function(params) {
+        // params.name: nhãn danh mục (vd: "Hà Nội", "Miền Bắc", "Tháng 05")
+        // params.value: giá trị số liệu của phần tử
+        // params.seriesName: tên chuỗi dữ liệu
+        // params.dataIndex: chỉ số vị trí dữ liệu
+        
+        // 1. Tương tác lọc chéo Dashboard (Cross-filtering qua biến setFilter có sẵn trong scope):
+        if (typeof setFilter === 'function') {
+          // Hỗ trợ toggle: nếu đang lọc đúng giá trị này thì click lại sẽ hủy lọc (set null)
+          if (context && context.activeFilters && context.activeFilters['TÊN_CỘT_LỌC'] === params.name) {
+            setFilter('TÊN_CỘT_LỌC', null); // Hủy lọc
+          } else {
+            setFilter('TÊN_CỘT_LỌC', params.name); // Áp dụng lọc chéo
+          }
+        }
+      });
+    }
+    \`\`\`
+- Hiệu ứng thị giác khi di chuột & click (Visual Feedback):
+  * Đặt con trỏ chuột dạng bàn tay: Thêm \`cursor: 'pointer'\` trong cấu hình series hoặc \`myChart.getZr().setCursorStyle('pointer')\`.
+  * Highlight phần tử đang chọn: Có thể dùng \`selectedMode: 'single'\` trên series, hoặc gọi \`myChart.dispatchAction({ type: 'highlight', seriesIndex: params.seriesIndex, dataIndex: params.dataIndex })\`.
+- Tạo nút chức năng (Buttons) trên biểu đồ:
+  * Dùng mảng \`graphic: [...] \` của ECharts với \`type: 'group'\`, bên trong có \`rect\` (nền nút) và \`text\` (chữ), gắn \`cursor: 'pointer'\` và sự kiện \`onclick: function() { ... }\` để chuyển đổi kiểu biểu đồ (Bar/Line) hoặc reset bộ lọc.
+  * Hoặc dùng HTML DOM Overlay qua \`const dom = myChart.getDom();\` chèn thẻ button HTML thật có class CSS nổi góc trên.
+
+---
+6. NGUYÊN TẮC KỸ THUẬT BẮT BUỘC (CRITICAL CONTRACT):
+- Chỉ dùng JavaScript thuần chạy trực tiếp trên trình duyệt qua new Function.
+- Dữ liệu đã có sẵn trong biến toàn cục 'data' (Mảng các JSON Object).
+- BẮT BUỘC truy cập cột bằng ngoặc vuông: row["Tên Cột"] (KHÔNG dùng row.Tên Cột vì tên cột có thể có khoảng trắng hoặc dấu tiếng Việt).
+- Luôn ép kiểu số an toàn: const parseNum = v => typeof v === 'number' ? (isNaN(v) ? 0 : v) : parseFloat(String(v || '').replace(/[^0-9.-]/g, '')) || 0;
+- Nếu cần truy cập sheet khác: const rows = getSheet('Tên_Sheet_Khác');
+- Kết thúc mã code bằng lệnh: return option; (hoặc myChart.setOption(option); return option;).
+- CHỈ TRẢ VỀ DUY NHẤT một khối mã JavaScript trong \`\`\`javascript ... \`\`\`, KHÔNG viết văn bản chào hỏi, cảm ơn hay giải thích dài dòng bên ngoài khối mã.`;
 
       const out = document.getElementById('aiPromptOutput');
       if (out) out.value = promptText;
@@ -3192,6 +3516,421 @@ ${expectedOutput}
     updatePreview();
   }
 
+  // ===========================================================================
+  // SUPERSET TABLE ENGINE (HTML/CSS/JS NATIVE HIGH-PERFORMANCE TABLE)
+  // ===========================================================================
+  function exportSupersetTable(item, rows, cols) {
+    const rawName = (item.name || 'bang_du_lieu').replace(/[^a-zA-Z0-9_À-ỹ]/g, '_');
+    const fileName = `${rawName}_${new Date().toISOString().slice(0, 10)}`;
+
+    const exportData = rows.map(r => {
+      const obj = {};
+      cols.forEach(c => {
+        obj[c] = r[c] !== undefined && r[c] !== null ? r[c] : '';
+      });
+      return obj;
+    });
+
+    if (typeof XLSX !== 'undefined' && XLSX.utils && XLSX.writeFile) {
+      try {
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Data");
+        XLSX.writeFile(wb, `${fileName}.xlsx`);
+        if (typeof showToast === 'function') showToast('✓ Đã xuất bảng dữ liệu ra file Excel (.xlsx)!', 'success');
+        return;
+      } catch (err) {
+        console.warn('XLSX export failed, fallback to CSV:', err);
+      }
+    }
+
+    // Fallback to CSV with UTF-8 BOM
+    let csv = '\uFEFF';
+    csv += cols.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',') + '\r\n';
+    exportData.forEach(r => {
+      csv += cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(',') + '\r\n';
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fileName}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    if (typeof showToast === 'function') showToast('✓ Đã xuất bảng dữ liệu ra file CSV!', 'success');
+  }
+
+  function renderSupersetTable(item, containerEl) {
+    if (!containerEl) return;
+    containerEl.innerHTML = '';
+
+    const tabId = item.tabId || DashboardState?.present?.activeTabId || 'default';
+    const rawData = typeof getFilteredData === 'function' ? getFilteredData(item.dataSourceKey, [], tabId, item.id) : [];
+
+    if (!rawData || rawData.length === 0) {
+      containerEl.innerHTML = `
+        <div class="db-table-empty">
+          <div style="font-size:24px;margin-bottom:6px;">📋</div>
+          <div>Không có dữ liệu hiển thị</div>
+          <div style="font-size:11px;color:var(--db-text-sub);margin-top:4px;">Vui lòng kiểm tra file nguồn hoặc nới lỏng bộ lọc dữ liệu.</div>
+        </div>
+      `;
+      return;
+    }
+
+    // 1. Process data according to Query Mode: 'raw' or 'aggregate'
+    const queryMode = item.queryMode || 'raw';
+    let displayCols = [];
+    let finalRows = [];
+
+    if (queryMode === 'aggregate') {
+      const groupCols = Array.isArray(item.groupByCols) && item.groupByCols.length > 0
+        ? item.groupByCols
+        : [Object.keys(rawData[0] || {})[0] || 'Nhóm'];
+
+      const metrics = Array.isArray(item.metrics) && item.metrics.length > 0
+        ? item.metrics
+        : [{ col: Object.keys(rawData[0] || {})[1] || 'Doanh Thu', agg: 'sum', label: `Tổng ${Object.keys(rawData[0] || {})[1] || 'Doanh Thu'}` }];
+
+      displayCols = [...groupCols];
+      metrics.forEach(m => {
+        const mLabel = m.label || `${m.agg.toUpperCase()}(${m.col})`;
+        displayCols.push(mLabel);
+      });
+
+      const groupsMap = new Map();
+      for (let i = 0; i < rawData.length; i++) {
+        const row = rawData[i];
+        const gKey = groupCols.map(c => String(row[c] ?? '')).join('___:::___');
+        let g = groupsMap.get(gKey);
+        if (!g) {
+          g = { _keys: groupCols.map(c => row[c]), _rows: [] };
+          groupsMap.set(gKey, g);
+        }
+        g._rows.push(row);
+      }
+
+      for (const [_, g] of groupsMap.entries()) {
+        const outRow = {};
+        groupCols.forEach((c, idx) => {
+          outRow[c] = g._keys[idx];
+        });
+        metrics.forEach(m => {
+          const mLabel = m.label || `${m.agg.toUpperCase()}(${m.col})`;
+          const numVals = g._rows.map(r => Number(r[m.col])).filter(n => !isNaN(n));
+          let val = 0;
+          if (m.agg === 'sum') {
+            val = numVals.reduce((a, b) => a + b, 0);
+          } else if (m.agg === 'avg') {
+            val = numVals.length > 0 ? (numVals.reduce((a, b) => a + b, 0) / numVals.length) : 0;
+          } else if (m.agg === 'count') {
+            val = g._rows.length;
+          } else if (m.agg === 'min') {
+            val = numVals.length > 0 ? Math.min(...numVals) : 0;
+          } else if (m.agg === 'max') {
+            val = numVals.length > 0 ? Math.max(...numVals) : 0;
+          } else if (m.agg === 'count_distinct') {
+            val = new Set(g._rows.map(r => r[m.col])).size;
+          }
+          outRow[mLabel] = val;
+        });
+        finalRows.push(outRow);
+      }
+    } else {
+      // Raw Records mode
+      displayCols = Array.isArray(item.columns) && item.columns.length > 0
+        ? [...item.columns]
+        : Object.keys(rawData[0] || {});
+
+      const limit = Number(item.rowLimit) || 0;
+      finalRows = limit > 0 ? rawData.slice(0, limit) : [...rawData];
+    }
+
+    // 2. Identify numeric columns & compute max values for Superset Cell Bars
+    const colMeta = {};
+    displayCols.forEach(col => {
+      let isNum = false;
+      let maxVal = 0;
+      let sumVal = 0;
+      let hasValidNum = false;
+
+      for (let i = 0; i < finalRows.length; i++) {
+        const v = finalRows[i][col];
+        if (v !== null && v !== undefined && v !== '') {
+          const n = Number(v);
+          if (!isNaN(n)) {
+            hasValidNum = true;
+            if (Math.abs(n) > maxVal) maxVal = Math.abs(n);
+            sumVal += n;
+          }
+        }
+      }
+      isNum = hasValidNum && finalRows.every(r => {
+        const v = r[col];
+        return v === null || v === undefined || v === '' || !isNaN(Number(v));
+      });
+
+      colMeta[col] = { isNum, maxVal, sumVal };
+    });
+
+    // 3. Apply Quick Search
+    if (item._searchText) {
+      const q = String(item._searchText).toLowerCase().trim();
+      finalRows = finalRows.filter(row => {
+        return displayCols.some(c => String(row[c] ?? '').toLowerCase().includes(q));
+      });
+    }
+
+    // 4. Apply Column Sorting
+    if (item._sortCol && displayCols.includes(item._sortCol)) {
+      const sCol = item._sortCol;
+      const sDir = item._sortDir === 'desc' ? -1 : 1;
+      const isNum = colMeta[sCol]?.isNum;
+
+      finalRows.sort((a, b) => {
+        const vA = a[sCol];
+        const vB = b[sCol];
+        if (isNum) {
+          const nA = Number(vA) || 0;
+          const nB = Number(vB) || 0;
+          return (nA - nB) * sDir;
+        }
+        return String(vA ?? '').localeCompare(String(vB ?? ''), 'vi') * sDir;
+      });
+    }
+
+    // 5. Pagination
+    const pageSize = item.pageSize !== undefined ? Number(item.pageSize) : 20;
+    const totalCount = finalRows.length;
+    let totalPages = 1;
+    let curPage = item._page || 1;
+    let pagedRows = finalRows;
+
+    if (pageSize > 0) {
+      totalPages = Math.ceil(totalCount / pageSize) || 1;
+      if (curPage > totalPages) curPage = totalPages;
+      if (curPage < 1) curPage = 1;
+      item._page = curPage;
+      const startIdx = (curPage - 1) * pageSize;
+      pagedRows = finalRows.slice(startIdx, startIdx + pageSize);
+    }
+
+    // 6. Build DOM
+    const wrapper = document.createElement('div');
+    wrapper.className = `db-superset-table-container density-${item.density || 'normal'}`;
+
+    // A. Toolbar
+    const showToolbar = item.showSearch !== false || item.showExport !== false;
+    if (showToolbar) {
+      const toolbar = document.createElement('div');
+      toolbar.className = 'dst-toolbar';
+
+      let searchHtml = '';
+      if (item.showSearch !== false) {
+        searchHtml = `
+          <div class="dst-search-box">
+            <span class="dst-search-icon">🔍</span>
+            <input type="text" class="dst-search-input" placeholder="Tìm kiếm nhanh..." value="${escapeHtml(item._searchText || '')}" />
+            ${item._searchText ? `<button class="dst-search-clear" title="Xóa tìm kiếm">✕</button>` : ''}
+          </div>
+        `;
+      }
+
+      toolbar.innerHTML = `
+        <div class="dst-toolbar-left">
+          ${searchHtml}
+          <span class="dst-count-badge">${totalCount} dòng</span>
+        </div>
+        <div class="dst-toolbar-right">
+          ${item.showExport !== false ? `<button class="dst-export-btn" title="Xuất dữ liệu bảng ra file Excel/CSV">📥 Xuất Tệp</button>` : ''}
+        </div>
+      `;
+
+      // Bind search
+      const sInput = toolbar.querySelector('.dst-search-input');
+      sInput?.addEventListener('input', (e) => {
+        item._searchText = e.target.value;
+        item._page = 1;
+        renderSupersetTable(item, containerEl);
+      });
+
+      const clearBtn = toolbar.querySelector('.dst-search-clear');
+      clearBtn?.addEventListener('click', () => {
+        item._searchText = '';
+        item._page = 1;
+        renderSupersetTable(item, containerEl);
+      });
+
+      // Bind export
+      const expBtn = toolbar.querySelector('.dst-export-btn');
+      expBtn?.addEventListener('click', () => {
+        exportSupersetTable(item, finalRows, displayCols);
+      });
+
+      wrapper.appendChild(toolbar);
+    }
+
+    // B. Table Scroll Area
+    const scrollArea = document.createElement('div');
+    scrollArea.className = 'dst-scroll-area';
+
+    const table = document.createElement('table');
+    table.className = 'db-superset-table';
+
+    // Header
+    const thead = document.createElement('thead');
+    let thsHtml = '';
+    if (item.showRowNumber !== false) {
+      thsHtml += `<th class="dst-th-stt">STT</th>`;
+    }
+    displayCols.forEach(col => {
+      const isSorted = item._sortCol === col;
+      const arrow = isSorted ? (item._sortDir === 'desc' ? '▼' : '▲') : '↕';
+      const align = colMeta[col]?.isNum ? 'align-right' : 'align-left';
+      thsHtml += `
+        <th class="${align} ${isSorted ? 'sorted' : ''}" data-col="${escapeHtml(col)}" title="Nhấn để sắp xếp theo cột ${escapeHtml(col)}">
+          <span>${escapeHtml(col)}</span>
+          <span class="dst-sort-icon">${arrow}</span>
+        </th>
+      `;
+    });
+    thead.innerHTML = `<tr>${thsHtml}</tr>`;
+
+    // Sort event
+    thead.querySelectorAll('th[data-col]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (item._sortCol === col) {
+          item._sortDir = item._sortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          item._sortCol = col;
+          item._sortDir = 'desc';
+        }
+        renderSupersetTable(item, containerEl);
+      });
+    });
+    table.appendChild(thead);
+
+    // Body
+    const tbody = document.createElement('tbody');
+    let rowsHtml = '';
+    pagedRows.forEach((row, rIdx) => {
+      const stt = pageSize > 0 ? ((curPage - 1) * pageSize + rIdx + 1) : (rIdx + 1);
+      let tdsHtml = '';
+      if (item.showRowNumber !== false) {
+        tdsHtml += `<td class="dst-td-stt">${stt}</td>`;
+      }
+
+      displayCols.forEach(col => {
+        const val = row[col];
+        const isNum = colMeta[col]?.isNum;
+        let cellFormatted = val !== undefined && val !== null ? String(val) : '';
+        let barHtml = '';
+
+        if (isNum && val !== '' && val !== null && val !== undefined) {
+          const num = Number(val);
+          if (!isNaN(num)) {
+            cellFormatted = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(num);
+            if (item.showCellBars !== false && colMeta[col].maxVal > 0) {
+              const pct = Math.max(0, Math.min(100, Math.round((Math.abs(num) / colMeta[col].maxVal) * 100)));
+              barHtml = `<div class="dst-cell-bar" style="width:${pct}%;"></div>`;
+            }
+          }
+        }
+
+        const align = isNum ? 'align-right' : 'align-left';
+        tdsHtml += `
+          <td class="${align}">
+            ${barHtml}
+            <span class="dst-cell-value">${escapeHtml(cellFormatted)}</span>
+          </td>
+        `;
+      });
+
+      rowsHtml += `<tr>${tdsHtml}</tr>`;
+    });
+
+    if (pagedRows.length === 0) {
+      rowsHtml = `<tr><td colspan="${displayCols.length + (item.showRowNumber !== false ? 1 : 0)}" style="text-align:center;padding:24px;color:var(--db-text-sub);font-style:italic;">Không tìm thấy kết quả phù hợp với từ khóa "${escapeHtml(item._searchText || '')}"</td></tr>`;
+    }
+    tbody.innerHTML = rowsHtml;
+    table.appendChild(tbody);
+
+    // Footer Totals Row
+    if (item.showTotals !== false && finalRows.length > 0) {
+      const tfoot = document.createElement('tfoot');
+      let footTds = '';
+      if (item.showRowNumber !== false) {
+        footTds += `<td class="dst-td-stt">∑</td>`;
+      }
+
+      displayCols.forEach((col, idx) => {
+        const isNum = colMeta[col]?.isNum;
+        if (idx === 0 && !isNum) {
+          footTds += `<td class="dst-total-label">Tổng cộng</td>`;
+        } else if (isNum) {
+          const sum = finalRows.reduce((acc, r) => acc + (Number(r[col]) || 0), 0);
+          const formatted = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(sum);
+          footTds += `<td class="align-right dst-total-val">${formatted}</td>`;
+        } else {
+          footTds += `<td></td>`;
+        }
+      });
+
+      tfoot.innerHTML = `<tr>${footTds}</tr>`;
+      table.appendChild(tfoot);
+    }
+
+    scrollArea.appendChild(table);
+    wrapper.appendChild(scrollArea);
+
+    // C. Pagination Footer
+    if (pageSize > 0 && totalPages > 1) {
+      const pagEl = document.createElement('div');
+      pagEl.className = 'dst-pagination';
+      const startNum = (curPage - 1) * pageSize + 1;
+      const endNum = Math.min(curPage * pageSize, totalCount);
+
+      pagEl.innerHTML = `
+        <span class="dst-page-info">Trang <strong>${curPage}</strong> / ${totalPages} (Dòng ${startNum} - ${endNum} của ${totalCount})</span>
+        <div class="dst-page-btns">
+          <button class="dst-pbtn dst-btn-first" ${curPage <= 1 ? 'disabled' : ''} title="Trang đầu">⏮</button>
+          <button class="dst-pbtn dst-btn-prev" ${curPage <= 1 ? 'disabled' : ''} title="Trang trước">◀ Trước</button>
+          <span style="font-weight:700;padding:0 4px;font-size:11px;">${curPage}</span>
+          <button class="dst-pbtn dst-btn-next" ${curPage >= totalPages ? 'disabled' : ''} title="Trang sau">Sau ▶</button>
+          <button class="dst-pbtn dst-btn-last" ${curPage >= totalPages ? 'disabled' : ''} title="Trang cuối">⏭</button>
+        </div>
+      `;
+
+      pagEl.querySelector('.dst-btn-first')?.addEventListener('click', () => {
+        item._page = 1;
+        renderSupersetTable(item, containerEl);
+      });
+      pagEl.querySelector('.dst-btn-prev')?.addEventListener('click', () => {
+        if (curPage > 1) {
+          item._page = curPage - 1;
+          renderSupersetTable(item, containerEl);
+        }
+      });
+      pagEl.querySelector('.dst-btn-next')?.addEventListener('click', () => {
+        if (curPage < totalPages) {
+          item._page = curPage + 1;
+          renderSupersetTable(item, containerEl);
+        }
+      });
+      pagEl.querySelector('.dst-btn-last')?.addEventListener('click', () => {
+        item._page = totalPages;
+        renderSupersetTable(item, containerEl);
+      });
+
+      wrapper.appendChild(pagEl);
+    }
+
+    containerEl.appendChild(wrapper);
+  }
+
   const WidgetConfigModal = {
     currentType: 'filter',
     editingItemId: null,
@@ -3201,6 +3940,10 @@ ${expectedOutput}
       this.editingItemId = itemId;
       const modal = document.getElementById('widgetConfigModal');
       const titleEl = document.getElementById('widgetModalTitle');
+      const subtitleEl = document.getElementById('widgetModalSubtitle');
+      const iconBadgeEl = document.getElementById('widgetModalIconBadge');
+      const badgeEl = document.getElementById('widgetModalBadge');
+      const saveBtnTextEl = document.getElementById('widgetSaveBtnText');
       const bodyEl = document.getElementById('widgetModalBody');
       const availableSources = DataStore.getAvailableSources();
       let existing = null;
@@ -3225,14 +3968,83 @@ ${expectedOutput}
 
       if (bodyEl) bodyEl.scrollTop = 0;
 
-      if (type === 'filter') {
-        const modalBox = modal.querySelector('.db-simple-box');
-        if (modalBox) {
-          modalBox.style.maxWidth = '760px';
-          modalBox.style.maxHeight = '90vh';
+      const modalBox = modal ? (modal.querySelector('.wcm-modal-container') || modal.querySelector('.db-simple-box')) : null;
+      if (modalBox) {
+        if (type === 'table') {
+          modalBox.style.maxWidth = '1380px';
+          modalBox.style.width = '96vw';
+          modalBox.style.maxHeight = '94vh';
+          modalBox.style.height = '94vh';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'hidden';
+            bodyEl.style.padding = '12px 16px';
+            bodyEl.style.maxHeight = 'calc(94vh - 110px)';
+            bodyEl.style.height = 'calc(94vh - 110px)';
+          }
+        } else if (type === 'filter') {
+          modalBox.style.maxWidth = '800px';
+          modalBox.style.width = '92vw';
+          modalBox.style.maxHeight = '92vh';
+          modalBox.style.height = '';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'auto';
+            bodyEl.style.padding = '20px';
+            bodyEl.style.maxHeight = 'calc(92vh - 120px)';
+            bodyEl.style.height = '';
+          }
+        } else if (type === 'kpi') {
+          modalBox.style.maxWidth = '820px';
+          modalBox.style.width = '92vw';
+          modalBox.style.maxHeight = '92vh';
+          modalBox.style.height = '';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'auto';
+            bodyEl.style.padding = '20px';
+            bodyEl.style.maxHeight = 'calc(92vh - 120px)';
+            bodyEl.style.height = '';
+          }
+        } else if (type === 'button') {
+          modalBox.style.maxWidth = '780px';
+          modalBox.style.width = '92vw';
+          modalBox.style.maxHeight = '92vh';
+          modalBox.style.height = '';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'auto';
+            bodyEl.style.padding = '20px';
+            bodyEl.style.maxHeight = 'calc(92vh - 120px)';
+            bodyEl.style.height = '';
+          }
+        } else if (type === 'frame' || type === 'shape') {
+          modalBox.style.maxWidth = '780px';
+          modalBox.style.width = '92vw';
+          modalBox.style.maxHeight = '92vh';
+          modalBox.style.height = '';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'auto';
+            bodyEl.style.padding = '20px';
+            bodyEl.style.maxHeight = 'calc(92vh - 120px)';
+            bodyEl.style.height = '';
+          }
+        } else {
+          modalBox.style.maxWidth = '740px';
+          modalBox.style.width = '92vw';
+          modalBox.style.maxHeight = '92vh';
+          modalBox.style.height = '';
+          if (bodyEl) {
+            bodyEl.style.overflow = 'auto';
+            bodyEl.style.padding = '20px';
+            bodyEl.style.maxHeight = 'calc(92vh - 120px)';
+            bodyEl.style.height = '';
+          }
         }
+      }
 
-        titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:8px;"><span>🔍</span><span>${existing ? 'Chỉnh Sửa Bộ Lọc Dữ Liệu' : 'Thêm Bộ Lọc Dữ Liệu (Filter Studio)'}</span></span>`;
+      if (type === 'filter') {
+        if (iconBadgeEl) iconBadgeEl.textContent = '🔍';
+        if (titleEl) titleEl.textContent = existing ? 'Chỉnh Sửa Bộ Lọc Dữ Liệu' : 'Thêm Bộ Lọc Dữ Liệu (Filter Studio)';
+        if (subtitleEl) subtitleEl.textContent = 'Tùy biến nguồn dữ liệu, phạm vi tab và kiểu điều khiển tương tác trực quan';
+        if (badgeEl) badgeEl.textContent = 'Filter Studio';
+        if (saveBtnTextEl) saveBtnTextEl.textContent = 'Lưu Bộ Lọc';
         const curCol = existing?.filterColumn && cols.includes(existing.filterColumn) ? existing.filterColumn : (cols[0] || '');
         const allDataRows = DataStore.getData(curSourceKey, curCol);
         const isColDate = isProbableDateColumn(curCol, allDataRows);
@@ -3249,6 +4061,14 @@ ${expectedOutput}
         }
 
         const otherFilters = DashboardState.present.items.filter(i => i.type === 'filter' && (!existing || i.id !== existing.id));
+        const tabs = (DashboardState.present && Array.isArray(DashboardState.present.tabs)) ? DashboardState.present.tabs : [{ id: 'default', name: 'Tab 1' }];
+        const curHomeTabId = existing?.tabId || DashboardState.present?.activeTabId || 'default';
+        const curHomeTabObj = tabs.find(t => t.id === curHomeTabId);
+        const curHomeTabName = curHomeTabObj ? (curHomeTabObj.name || curHomeTabObj.id) : 'Tab 1';
+
+        const curTargetTab = existing?.targetTab || 'current';
+        const curTargetScope = existing?.targetScope || 'all';
+        const curTargetChartIds = Array.isArray(existing?.targetChartIds) ? existing.targetChartIds : [];
 
         bodyEl.innerHTML = `
           <div class="filter-studio-wrapper">
@@ -3418,7 +4238,51 @@ ${expectedOutput}
               </div>
             </div>
 
-            <!-- 5. KHUNG XEM TRƯỚC TRỰC QUAN TRÊN CANVAS (LIVE PREVIEW) -->
+            <!-- 5. PHẠM VI ÁP DỤNG BỘ LỌC (TARGET TAB & TARGET CHARTS) -->
+            <div class="filter-studio-sec">
+              <div class="filter-studio-sec-header">
+                <div class="filter-studio-sec-title">
+                  <span class="filter-studio-step-badge">5</span>
+                  <span>Phạm Vi Áp Dụng Bộ Lọc (Target Tab &amp; Charts)</span>
+                </div>
+                <span style="font-size:11px;color:#0284c7;font-weight:600;">Mặc định: Tất cả biểu đồ trong tab</span>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;">
+                <div class="ai-form-group">
+                  <label class="ai-label">🎯 Tab Áp Dụng Bộ Lọc (Target Tab):</label>
+                  <select class="ce-select" id="wmFilterTargetTabSelect" style="width:100%;">
+                    <option value="current" ${(!curTargetTab || curTargetTab === 'current') ? 'selected' : ''}>📌 Tab hiện tại (${escapeHtml(curHomeTabName)})</option>
+                    <option value="all" ${curTargetTab === 'all' ? 'selected' : ''}>🌐 Tất cả các Tab (Bộ lọc toàn cục)</option>
+                    ${tabs.map(t => `<option value="${escapeHtml(t.id)}" ${curTargetTab === t.id ? 'selected' : ''}>📑 Tab: ${escapeHtml(t.name || t.id)}</option>`).join('')}
+                  </select>
+                  <div style="font-size:11px;color:#64748b;margin-top:4px;">Chỉ định Tab mà bộ lọc này sẽ trỏ vào điều khiển dữ liệu.</div>
+                </div>
+
+                <div class="ai-form-group">
+                  <label class="ai-label">📊 Biểu Đồ Áp Dụng (Target Charts):</label>
+                  <select class="ce-select" id="wmFilterTargetScopeSelect" style="width:100%;">
+                    <option value="all" ${curTargetScope !== 'custom' ? 'selected' : ''}>✅ Áp dụng cho mọi biểu đồ trong tab (Mặc định)</option>
+                    <option value="custom" ${curTargetScope === 'custom' ? 'selected' : ''}>🎯 Chỉ áp dụng cho các biểu đồ cụ thể được chọn...</option>
+                  </select>
+                  <div style="font-size:11px;color:#64748b;margin-top:4px;">Tùy chỉnh biểu đồ nào nhận bộ lọc, biểu đồ nào bỏ qua.</div>
+                </div>
+              </div>
+
+              <!-- Danh sách Checkbox chọn Biểu đồ cụ thể -->
+              <div id="wmFilterChartsPickerWrap" style="margin-top:10px;display:${curTargetScope === 'custom' ? 'block' : 'none'};background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-size:12px;font-weight:700;color:#0f172a;">Chọn biểu đồ nhận bộ lọc này:</span>
+                  <div style="display:flex;gap:6px;">
+                    <button type="button" class="db-top-filter-btn" id="btnFilterSelectAllCharts" style="font-size:11px;padding:2px 8px;">✓ Chọn tất cả</button>
+                    <button type="button" class="db-top-filter-btn" id="btnFilterSelectNoneCharts" style="font-size:11px;padding:2px 8px;">✕ Bỏ chọn</button>
+                  </div>
+                </div>
+                <div class="filter-charts-checkbox-list" id="wmFilterChartsCheckboxList" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+              </div>
+            </div>
+
+            <!-- 6. KHUNG XEM TRƯỚC TRỰC QUAN TRÊN CANVAS (LIVE PREVIEW) -->
             <div class="filter-live-preview-box">
               <div class="filter-live-preview-header">
                 <div class="filter-live-preview-title">
@@ -3479,7 +4343,7 @@ ${expectedOutput}
           if (!mockupEl) return;
           const hideH = document.getElementById('wmHideHeaderCheckbox')?.checked;
           const displayTitle = name || `Lọc: ${col}`;
-          
+
           let headerHtml = hideH ? '' : `
             <div class="filter-preview-mockup-label">
               <span>${escapeHtml(displayTitle)}</span>
@@ -3682,44 +4546,232 @@ ${expectedOutput}
             const vals = Array.from(new Set(rows.map(r => r[colSel.value]).filter(v => v !== null && v !== undefined && v !== ''))).slice(0, 10);
             renderFilterLiveMockup(colSel.value, typeHiddenInp.value, titleInp.value, vals);
           });
+
+          // Sự kiện cấu hình Phạm vi Tab & Biểu đồ mục tiêu
+          const targetTabSel = document.getElementById('wmFilterTargetTabSelect');
+          const targetScopeSel = document.getElementById('wmFilterTargetScopeSelect');
+          const chartsPickerWrap = document.getElementById('wmFilterChartsPickerWrap');
+          const chartsListEl = document.getElementById('wmFilterChartsCheckboxList');
+
+          const renderFilterTargetChartsPicker = () => {
+            if (!chartsListEl) return;
+            const chosenTargetTab = targetTabSel?.value || 'current';
+            const effectiveTabId = chosenTargetTab === 'current' ? curHomeTabId : chosenTargetTab;
+
+            let candidateCharts = [];
+            if (effectiveTabId === 'all') {
+              candidateCharts = DashboardState.present.items.filter(i => i.type === 'chart');
+            } else {
+              candidateCharts = DashboardState.present.items.filter(i => i.type === 'chart' && (i.tabId || 'default') === effectiveTabId);
+            }
+
+            if (candidateCharts.length === 0) {
+              chartsListEl.innerHTML = `
+                <div style="font-size:12px;color:#94a3b8;font-style:italic;padding:8px 0;">
+                  ⚠️ Chưa có biểu đồ nào trong Tab này. Mặc định bộ lọc sẽ tác động lên mọi biểu đồ khi được tạo trong tab.
+                </div>
+              `;
+              return;
+            }
+
+            chartsListEl.innerHTML = candidateCharts.map(c => {
+              const chartName = c.name || `Biểu Đồ ${c.id}`;
+              const isChecked = curTargetChartIds.length === 0 || curTargetChartIds.includes(c.id);
+              const tabBadge = effectiveTabId === 'all' ? `<span style="font-size:10.5px;color:#64748b;background:#e2e8f0;padding:1px 6px;border-radius:4px;margin-left:auto;">Tab: ${escapeHtml(c.tabId || 'default')}</span>` : '';
+              return `
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;background:#ffffff;padding:6px 10px;border-radius:6px;border:1px solid #e2e8f0;user-select:none;transition:border-color 0.15s;">
+                  <input type="checkbox" value="${escapeHtml(c.id)}" class="wm-target-chart-chk" ${isChecked ? 'checked' : ''} style="accent-color:#0284c7;width:15px;height:15px;cursor:pointer;" />
+                  <span style="font-weight:600;color:#0f172a;">📊 ${escapeHtml(chartName)}</span>
+                  ${tabBadge}
+                </label>
+              `;
+            }).join('');
+          };
+
+          targetTabSel?.addEventListener('change', () => {
+            renderFilterTargetChartsPicker();
+          });
+
+          targetScopeSel?.addEventListener('change', (e) => {
+            const isCustom = e.target.value === 'custom';
+            if (chartsPickerWrap) chartsPickerWrap.style.display = isCustom ? 'block' : 'none';
+            if (isCustom) renderFilterTargetChartsPicker();
+          });
+
+          document.getElementById('btnFilterSelectAllCharts')?.addEventListener('click', () => {
+            document.querySelectorAll('.wm-target-chart-chk').forEach(chk => chk.checked = true);
+          });
+          document.getElementById('btnFilterSelectNoneCharts')?.addEventListener('click', () => {
+            document.querySelectorAll('.wm-target-chart-chk').forEach(chk => chk.checked = false);
+          });
+
+          renderFilterTargetChartsPicker();
         }, 30);
       } else if (type === 'kpi') {
-        titleEl.textContent = existing ? 'Chỉnh Sửa Thẻ KPI' : 'Thêm Chỉ Số Đo Lường (KPI)';
+        if (iconBadgeEl) iconBadgeEl.textContent = '📈';
+        if (titleEl) titleEl.textContent = existing ? 'Chỉnh Sửa Chỉ Số Đo Lường (KPI)' : 'Thêm Chỉ Số Đo Lường (KPI Studio)';
+        if (subtitleEl) subtitleEl.textContent = 'Tính toán tổng hợp số liệu từ file Excel và hiển thị dạng thẻ chỉ số ấn tượng';
+        if (badgeEl) badgeEl.textContent = 'KPI Studio';
+        if (saveBtnTextEl) saveBtnTextEl.textContent = 'Lưu Chỉ Số KPI';
+
+        const curMetricCol = existing && existing.metricColumn && cols.includes(existing.metricColumn) ? existing.metricColumn : (cols[0] || '');
+        const curAgg = existing?.aggregation || 'sum';
+        const curName = existing ? existing.name : `Tổng ${curMetricCol || 'Chỉ Số'}`;
+        const curPrefix = existing ? (existing.prefix || '') : '';
+        const curSuffix = existing ? (existing.suffix || '') : ' đ';
+        const curIcon = existing?.icon || '📈';
+        const curCardBg = existing?.cardBg || 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
+        const curTextColor = existing?.color || '#ffffff';
+
         bodyEl.innerHTML = `
-          <div class="ai-form-group">
-            <label class="ai-label">Chọn Cột Số Liệu:</label>
-            <select class="ce-select" id="wmKpiColSelect" style="width:100%;">
-              ${cols.map(c => `<option value="${c}" ${existing && existing.metricColumn === c ? 'selected' : ''}>${c}</option>`).join('')}
-            </select>
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-label">Phương Thức Tính Toán:</label>
-            <select class="ce-select" id="wmKpiAggSelect" style="width:100%;">
-              <option value="sum" ${existing && existing.aggregation === 'sum' ? 'selected' : ''}>Tổng Cộng (Sum)</option>
-              <option value="avg" ${existing && existing.aggregation === 'avg' ? 'selected' : ''}>Trung Bình (Average)</option>
-              <option value="count" ${existing && existing.aggregation === 'count' ? 'selected' : ''}>Đếm Dòng (Count)</option>
-              <option value="max" ${existing && existing.aggregation === 'max' ? 'selected' : ''}>Lớn Nhất (Max)</option>
-              <option value="min" ${existing && existing.aggregation === 'min' ? 'selected' : ''}>Nhỏ Nhất (Min)</option>
-            </select>
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-label">Tên Chỉ Số KPI:</label>
-            <input type="text" class="ce-input" id="wmKpiTitleInput" value="${existing ? existing.name : 'Tổng ' + (cols[0] || 'Chỉ Số')}" />
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div class="ai-form-group">
-              <label class="ai-label">Tiền Tố (Prefix):</label>
-              <input type="text" class="ce-input" id="wmKpiPrefixInput" placeholder="Ví dụ: $" value="${existing ? (existing.prefix || '') : ''}" />
+          <div class="wcm-studio-layout">
+            <div class="wcm-studio-form">
+              <!-- 1. NGUỒN DỮ LIỆU & CỘT TÍNH TOÁN -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">1</span>
+                    <span>Nguồn Dữ Liệu &amp; Cột Số Liệu</span>
+                  </div>
+                  <span style="font-size:11px;color:#0284c7;font-weight:600;">Excel / Sheet</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                  <div>
+                    <label class="wcm-label">Chọn File / Sheet Nguồn:</label>
+                    <select class="wcm-select" id="wmKpiSourceSelect">
+                      ${availableSources.map(s => `<option value="${escapeHtml(s.key)}" ${s.key === curSourceKey ? 'selected' : ''}>📄 ${escapeHtml(s.label)}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div>
+                      <label class="wcm-label">Cột Số Liệu Tính Toán:</label>
+                      <select class="wcm-select" id="wmKpiColSelect">
+                        ${cols.map(c => `<option value="${escapeHtml(c)}" ${c === curMetricCol ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                      </select>
+                    </div>
+                    <div>
+                      <label class="wcm-label">Hàm Tổng Hợp:</label>
+                      <select class="wcm-select" id="wmKpiAggSelect">
+                        <option value="sum" ${curAgg === 'sum' ? 'selected' : ''}>∑ Tổng Cộng (SUM)</option>
+                        <option value="avg" ${curAgg === 'avg' ? 'selected' : ''}>AVG Trung Bình</option>
+                        <option value="count" ${curAgg === 'count' ? 'selected' : ''}>COUNT Đếm Dòng</option>
+                        <option value="max" ${curAgg === 'max' ? 'selected' : ''}>MAX Lớn Nhất</option>
+                        <option value="min" ${curAgg === 'min' ? 'selected' : ''}>MIN Nhỏ Nhất</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. TIÊU ĐỀ & BIỂU TƯỢNG (ICON) -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">2</span>
+                    <span>Tên Chỉ Số &amp; Biểu Tượng Icon</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                  <div>
+                    <label class="wcm-label">Tên / Nhãn Thẻ KPI:</label>
+                    <input type="text" class="wcm-input" id="wmKpiTitleInput" value="${escapeHtml(curName)}" placeholder="Nhập tên chỉ số KPI..." />
+                  </div>
+                  <div>
+                    <label class="wcm-label">Biểu Tượng Icon Nổi Bật:</label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <input type="text" class="wcm-input" id="wmKpiIconInput" value="${escapeHtml(curIcon)}" style="width:65px;text-align:center;font-size:18px;" />
+                      <div class="wcm-chips-row" style="margin-top:0;" id="wmKpiIconChips">
+                        ${['💰', '📈', '👥', '🛒', '🎯', '⚡', '📦', '🏷️', '⭐', '🏆', '💎', '🔥'].map(ic => `
+                          <button type="button" class="wcm-chip-btn ${ic === curIcon ? 'active' : ''}" data-icon="${ic}">${ic}</button>
+                        `).join('')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. TIỀN TỐ & HẬU TỐ (ĐƠN VỊ TÍNH) -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">3</span>
+                    <span>Đơn Vị &amp; Định Dạng Số</span>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                  <div>
+                    <label class="wcm-label">Tiền Tố (Prefix):</label>
+                    <input type="text" class="wcm-input" id="wmKpiPrefixInput" placeholder="Ví dụ: $" value="${escapeHtml(curPrefix)}" />
+                  </div>
+                  <div>
+                    <label class="wcm-label">Hậu Tố (Suffix):</label>
+                    <input type="text" class="wcm-input" id="wmKpiSuffixInput" placeholder="Ví dụ: đ, %, SP" value="${escapeHtml(curSuffix)}" />
+                  </div>
+                </div>
+                <div class="wcm-chips-row" id="wmKpiUnitChips">
+                  <span style="font-size:11px;color:#64748b;font-weight:600;">Gợi ý nhanh:</span>
+                  <button type="button" class="wcm-chip-btn" data-prefix="" data-suffix=" đ">₫ VNĐ</button>
+                  <button type="button" class="wcm-chip-btn" data-prefix="$" data-suffix="">$ USD</button>
+                  <button type="button" class="wcm-chip-btn" data-prefix="" data-suffix="%">% Tỉ Lệ</button>
+                  <button type="button" class="wcm-chip-btn" data-prefix="" data-suffix=" đơn">📦 Đơn</button>
+                  <button type="button" class="wcm-chip-btn" data-prefix="" data-suffix=" Khách">👥 Khách</button>
+                </div>
+              </div>
+
+              <!-- 4. CHỦ ĐỀ & MÀU SẮC THẺ -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">4</span>
+                    <span>Phong Cách &amp; Màu Sắc Thẻ</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="wcm-label">Chọn Mẫu Thẻ (Theme Presets):</label>
+                  <div class="wcm-swatches-grid" id="wmKpiThemeGrid">
+                    <div class="wcm-swatch-item ${curCardBg.includes('0284c7') ? 'active' : ''}" data-bg="linear-gradient(135deg, #0284c7 0%, #0369a1 100%)" data-color="#ffffff" style="background:linear-gradient(135deg, #0284c7, #0369a1);" title="Ocean Blue">✓</div>
+                    <div class="wcm-swatch-item ${curCardBg.includes('059669') ? 'active' : ''}" data-bg="linear-gradient(135deg, #059669 0%, #047857 100%)" data-color="#ffffff" style="background:linear-gradient(135deg, #059669, #047857);" title="Emerald Growth">✓</div>
+                    <div class="wcm-swatch-item ${curCardBg.includes('7c3aed') ? 'active' : ''}" data-bg="linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" data-color="#ffffff" style="background:linear-gradient(135deg, #7c3aed, #6d28d9);" title="Royal Violet">✓</div>
+                    <div class="wcm-swatch-item ${curCardBg.includes('ea580c') ? 'active' : ''}" data-bg="linear-gradient(135deg, #ea580c 0%, #c2410c 100%)" data-color="#ffffff" style="background:linear-gradient(135deg, #ea580c, #c2410c);" title="Sunset Amber">✓</div>
+                    <div class="wcm-swatch-item ${curCardBg.includes('0f172a') || curCardBg.includes('1e293b') ? 'active' : ''}" data-bg="linear-gradient(135deg, #1e293b 0%, #0f172a 100%)" data-color="#ffffff" style="background:linear-gradient(135deg, #1e293b, #0f172a);" title="Dark Tech">✓</div>
+                    <div class="wcm-swatch-item ${curCardBg.includes('#ffffff') ? 'active' : ''}" data-bg="#ffffff" data-color="#0f172a" style="background:#ffffff;border:1.5px solid #cbd5e1;color:#0f172a;" title="Clean White">✓</div>
+                  </div>
+                  <input type="hidden" id="wmKpiCardBg" value="${escapeHtml(curCardBg)}" />
+                  <input type="hidden" id="wmKpiTextColor" value="${escapeHtml(curTextColor)}" />
+                </div>
+              </div>
             </div>
-            <div class="ai-form-group">
-              <label class="ai-label">Hậu Tố (Suffix):</label>
-              <input type="text" class="ce-input" id="wmKpiSuffixInput" placeholder="Ví dụ: đ, VND, %" value="${existing ? (existing.suffix || '') : ' đ'}" />
+
+            <!-- CỘT PHẢI: LIVE PREVIEW -->
+            <div class="wcm-studio-preview-pane">
+              <div class="wcm-preview-header">
+                <div class="wcm-preview-title">
+                  <span class="wcm-live-dot"></span>
+                  <span>Xem Trước Trực Tiếp</span>
+                </div>
+                <span class="wcm-badge">Live Card</span>
+              </div>
+              <div class="wcm-preview-stage" id="wmKpiPreviewStage" style="background:#f1f5f9;">
+                <div class="wcm-kpi-card-mockup" id="wmKpiLiveCard" style="background:${curCardBg};color:${curTextColor};">
+                  <div class="wcm-kpi-icon-pill" id="wmKpiLiveIcon" style="background:${curCardBg === '#ffffff' ? '#f1f5f9' : 'rgba(255,255,255,0.2)'};">${curIcon}</div>
+                  <div class="wcm-kpi-name-label" id="wmKpiLiveName" style="color:${curCardBg === '#ffffff' ? '#64748b' : 'rgba(255,255,255,0.85)'};">${escapeHtml(curName)}</div>
+                  <div class="wcm-kpi-val-number" id="wmKpiLiveValue">--</div>
+                </div>
+              </div>
+              <div style="font-size:11px;color:#64748b;line-height:1.4;">
+                ⚡ Giá trị tính toán theo thời gian thực từ dữ liệu cột <strong><span id="wmKpiColHint">${escapeHtml(curMetricCol || '--')}</span></strong>.
+              </div>
             </div>
           </div>
         `;
       } else if (type === 'heading') {
-        titleEl.textContent = existing ? 'Chỉnh Sửa Tiêu Đề' : 'Thêm Tiêu Đề / Heading';
-        const curText = existing ? (existing.text !== undefined ? existing.text : existing.name) : 'Báo Cáo Phân Tích Hoạt Động';
+        if (iconBadgeEl) iconBadgeEl.textContent = '🔤';
+        if (titleEl) titleEl.textContent = existing ? 'Chỉnh Sửa Tiêu Đề' : 'Thêm Tiêu Đề / Heading Studio';
+        if (subtitleEl) subtitleEl.textContent = 'Tùy biến typography, phông chữ Canva và cỡ chữ nổi bật cho báo cáo';
+        if (badgeEl) badgeEl.textContent = 'Typography';
+        if (saveBtnTextEl) saveBtnTextEl.textContent = 'Lưu Tiêu Đề';
+
+        const curText = existing ? (existing.text !== undefined ? existing.text : existing.name) : 'Báo Cáo Phân Tích Hoạt Động & Doanh Thu';
         const curFont = existing?.fontFamily || 'Inter, sans-serif';
         const curSizeNum = parseInt(existing?.fontSize || '24', 10) || 24;
         const curColor = existing?.color || '#0f172a';
@@ -3729,22 +4781,67 @@ ${expectedOutput}
         const curAlign = existing?.textAlign || 'left';
 
         bodyEl.innerHTML = `
-          <div class="ai-form-group">
-            <label class="ai-label">Nội Dung Tiêu Đề:</label>
-            <input type="text" class="ce-input" id="wmHeadingTextInput" value="${escapeHtml(curText)}" style="font-size:14px;padding:8px 10px;" />
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-label">Định Dạng Chữ (Canva Style - Phím tắt Ctrl + B, I, U):</label>
-            ${buildCanvaBarHtml('wmHeading', curFont, curSizeNum, curColor, isBold, isItalic, isUnderline, curAlign)}
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-label">Xem Trước Trực Tiếp (Live Preview):</label>
-            <div class="wm-canva-preview-box" id="wmHeadingPreviewBox"></div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <!-- 1. NỘI DUNG TIÊU ĐỀ -->
+            <div class="wcm-section">
+              <div class="wcm-sec-header">
+                <div class="wcm-sec-title">
+                  <span class="wcm-step-badge">1</span>
+                  <span>Nội Dung Tiêu Đề</span>
+                </div>
+              </div>
+              <div>
+                <input type="text" class="wcm-input" id="wmHeadingTextInput" value="${escapeHtml(curText)}" style="font-size:14px;padding:8px 12px;font-weight:600;" placeholder="Nhập nội dung tiêu đề..." />
+              </div>
+              <div class="wcm-chips-row" id="wmHeadingPresets" style="margin-top:8px;">
+                <span style="font-size:11px;color:#64748b;font-weight:600;">Mẫu cỡ nhanh:</span>
+                <button type="button" class="wcm-chip-btn" data-size="32" data-bold="true">👑 H1 Hero (32px)</button>
+                <button type="button" class="wcm-chip-btn" data-size="24" data-bold="true">📌 H2 Section (24px)</button>
+                <button type="button" class="wcm-chip-btn" data-size="18" data-bold="true">🏷️ H3 Subsection (18px)</button>
+                <button type="button" class="wcm-chip-btn" data-size="14" data-bold="false">💡 Subtitle (14px)</button>
+              </div>
+            </div>
+
+            <!-- 2. BỘ CÔNG CỤ ĐỊNH DẠNG TYPOGRAPHY (CANVA STYLE) -->
+            <div class="wcm-section">
+              <div class="wcm-sec-header">
+                <div class="wcm-sec-title">
+                  <span class="wcm-step-badge">2</span>
+                  <span>Định Dạng Chữ (Canva Typography Bar)</span>
+                </div>
+                <span style="font-size:11px;color:#0284c7;font-weight:600;">Phím tắt Ctrl + B, I, U</span>
+              </div>
+              <div>
+                ${buildCanvaBarHtml('wmHeading', curFont, curSizeNum, curColor, isBold, isItalic, isUnderline, curAlign)}
+              </div>
+            </div>
+
+            <!-- 3. LIVE PREVIEW -->
+            <div class="wcm-section">
+              <div class="wcm-sec-header">
+                <div class="wcm-sec-title">
+                  <span class="wcm-step-badge">3</span>
+                  <span>Xem Trước Trực Quan (Live Preview)</span>
+                </div>
+                <div class="wcm-chips-row" style="margin-top:0;" id="wmHeadingBgToggle">
+                  <span style="font-size:11px;color:#64748b;">Nền xem thử:</span>
+                  <button type="button" class="wcm-chip-btn active" data-bg="#ffffff">Trắng</button>
+                  <button type="button" class="wcm-chip-btn" data-bg="#f1f5f9">Xám</button>
+                  <button type="button" class="wcm-chip-btn" data-bg="#0f172a">Tối</button>
+                </div>
+              </div>
+              <div class="wcm-heading-preview-box" id="wmHeadingPreviewBox" style="background:#ffffff;padding:16px;"></div>
+            </div>
           </div>
         `;
       } else if (type === 'text') {
-        titleEl.textContent = existing ? 'Chỉnh Sửa Đoạn Văn Bản' : 'Thêm Đoạn Văn Bản / Ghi Chú';
-        const curText = existing ? (existing.text !== undefined ? existing.text : existing.name) : 'Ghi chú số liệu phân tích: Báo cáo cập nhật theo thời gian thực từ file Excel nguồn.';
+        if (iconBadgeEl) iconBadgeEl.textContent = '📝';
+        if (titleEl) titleEl.textContent = existing ? 'Chỉnh Sửa Đoạn Văn Bản / Ghi Chú' : 'Thêm Đoạn Văn Bản / Ghi Chú';
+        if (subtitleEl) subtitleEl.textContent = 'Thêm ghi chú phân tích, diễn giải số liệu hoặc nhận xét nghiệp vụ';
+        if (badgeEl) badgeEl.textContent = 'Text Studio';
+        if (saveBtnTextEl) saveBtnTextEl.textContent = 'Lưu Văn Bản';
+
+        const curText = existing ? (existing.text !== undefined ? existing.text : existing.name) : 'Ghi chú số liệu: Báo cáo cập nhật theo thời gian thực từ các nguồn dữ liệu Excel đã nạp.';
         const curFont = existing?.fontFamily || 'Inter, sans-serif';
         const curSizeNum = parseInt(existing?.fontSize || '14', 10) || 14;
         const curColor = existing?.color || '#0f172a';
@@ -3754,135 +4851,1140 @@ ${expectedOutput}
         const curAlign = existing?.textAlign || 'left';
 
         bodyEl.innerHTML = `
-          <div class="ai-form-group">
-            <label class="ai-label">Nội Dung Văn Bản / Ghi Chú:</label>
-            <textarea class="ce-textarea" id="wmTextContent" rows="4" style="height:90px;font-size:13px;padding:8px 10px;">${escapeHtml(curText)}</textarea>
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-label">Định Dạng Chữ (Canva Style - Phím tắt Ctrl + B, I, U):</label>
-            ${buildCanvaBarHtml('wmText', curFont, curSizeNum, curColor, isBold, isItalic, isUnderline, curAlign)}
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-label">Xem Trước Trực Tiếp (Live Preview):</label>
-            <div class="wm-canva-preview-box" id="wmTextPreviewBox"></div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <!-- 1. NỘI DUNG VĂN BẢN -->
+            <div class="wcm-section">
+              <div class="wcm-sec-header">
+                <div class="wcm-sec-title">
+                  <span class="wcm-step-badge">1</span>
+                  <span>Nội Dung Đoạn Văn / Ghi Chú</span>
+                </div>
+              </div>
+              <div>
+                <textarea class="wcm-textarea" id="wmTextContent" rows="4" style="height:95px;" placeholder="Nhập nội dung ghi chú...">${escapeHtml(curText)}</textarea>
+              </div>
+              <div class="wcm-chips-row" id="wmTextPresets" style="margin-top:8px;">
+                <span style="font-size:11px;color:#64748b;font-weight:600;">Mẫu chú thích nhanh:</span>
+                <button type="button" class="wcm-chip-btn" data-preset="info">ℹ️ Hộp Thông Tin</button>
+                <button type="button" class="wcm-chip-btn" data-preset="note">💡 Hộp Ghi Chú</button>
+                <button type="button" class="wcm-chip-btn" data-preset="success">✅ Đánh Giá Tốt</button>
+                <button type="button" class="wcm-chip-btn" data-preset="plain">📄 Trong Suốt</button>
+              </div>
+            </div>
+
+            <!-- 2. BỘ CÔNG CỤ CANVA -->
+            <div class="wcm-section">
+              <div class="wcm-sec-header">
+                <div class="wcm-sec-title">
+                  <span class="wcm-step-badge">2</span>
+                  <span>Định Dạng Chữ (Canva Typography Bar)</span>
+                </div>
+              </div>
+              <div>
+                ${buildCanvaBarHtml('wmText', curFont, curSizeNum, curColor, isBold, isItalic, isUnderline, curAlign)}
+              </div>
+            </div>
+
+            <!-- 3. LIVE PREVIEW -->
+            <div class="wcm-section">
+              <div class="wcm-sec-header">
+                <div class="wcm-sec-title">
+                  <span class="wcm-step-badge">3</span>
+                  <span>Xem Trước Trực Quan (Live Preview)</span>
+                </div>
+              </div>
+              <div class="wcm-heading-preview-box" id="wmTextPreviewBox" style="background:#ffffff;padding:14px;"></div>
+            </div>
           </div>
         `;
       } else if (type === 'shape') {
-        titleEl.textContent = existing ? 'Chỉnh Sửa Hình Khối' : 'Cấu Hình Hình Khối (Canva / Figma)';
+        if (iconBadgeEl) iconBadgeEl.textContent = '📐';
+        if (titleEl) titleEl.textContent = existing ? 'Chỉnh Sửa Hình Khối' : 'Cấu Hình Hình Khối (Shape Studio)';
+        if (subtitleEl) subtitleEl.textContent = 'Khối thẻ trang trí, hình tròn hoặc đường kẻ phân cách';
+        if (badgeEl) badgeEl.textContent = 'Shape Studio';
+        if (saveBtnTextEl) saveBtnTextEl.textContent = 'Lưu Hình Khối';
+
+        const curShapeType = existing ? existing.shapeType : 'rectangle';
+        const curName = existing ? existing.name : 'Hình Khối';
+        const curBg = existing?.bgColor && existing.bgColor.startsWith('#') ? existing.bgColor : '#ffffff';
+        const curBorder = existing?.borderColor && existing.borderColor.startsWith('#') ? existing.borderColor : '#cbd5e1';
+        const curBorderWidth = existing?.borderWidth !== undefined ? existing.borderWidth : 1;
+        const curRadius = existing?.borderRadius !== undefined ? existing.borderRadius : 8;
+
         bodyEl.innerHTML = `
-          <div class="ai-form-group">
-            <label class="ai-label">Loại Hình Khối:</label>
-            <select class="ce-select" id="wmShapeTypeSelect" style="width:100%;">
-              <option value="rectangle" ${!existing || existing.shapeType === 'rectangle' ? 'selected' : ''}>Hình Chữ Nhật / Card Khối</option>
-              <option value="circle" ${existing && existing.shapeType === 'circle' ? 'selected' : ''}>Hình Tròn / Elip</option>
-              <option value="line" ${existing && existing.shapeType === 'line' ? 'selected' : ''}>Đường Kẻ Phân Cách (Line)</option>
-            </select>
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-label">Tên Hình Khối:</label>
-            <input type="text" class="ce-input" id="wmShapeNameInput" value="${existing ? existing.name : 'Hình Khối'}" />
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div class="ai-form-group">
-              <label class="ai-label">Màu Nền (Background):</label>
-              <input type="color" class="ce-input" id="wmShapeBgColor" value="${existing?.bgColor && existing.bgColor.startsWith('#') ? existing.bgColor : '#ffffff'}" style="height:38px;cursor:pointer;padding:2px;" />
+          <div class="wcm-studio-layout">
+            <div class="wcm-studio-form">
+              <!-- 1. LOẠI HÌNH KHỐI -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">1</span>
+                    <span>Chọn Loại Hình Khối</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                  <div>
+                    <label class="wcm-label">Dạng Hình Học:</label>
+                    <select class="wcm-select" id="wmShapeTypeSelect">
+                      <option value="rectangle" ${curShapeType === 'rectangle' ? 'selected' : ''}>Card Hình Chữ Nhật / Bo Góc</option>
+                      <option value="circle" ${curShapeType === 'circle' ? 'selected' : ''}>Hình Tròn / Elip</option>
+                      <option value="line" ${curShapeType === 'line' ? 'selected' : ''}>Đường Kẻ Phân Cách (Line)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="wcm-label">Tên Hình Khối:</label>
+                    <input type="text" class="wcm-input" id="wmShapeNameInput" value="${escapeHtml(curName)}" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. MÀU SẮC & VIỀN -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">2</span>
+                    <span>Màu Nền, Viền &amp; Bo Góc</span>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                  <div>
+                    <label class="wcm-label">Màu Nền:</label>
+                    <input type="color" class="wcm-input" id="wmShapeBgColor" value="${curBg}" style="height:38px;padding:2px;cursor:pointer;" />
+                  </div>
+                  <div>
+                    <label class="wcm-label">Màu Viền:</label>
+                    <input type="color" class="wcm-input" id="wmShapeBorderColor" value="${curBorder}" style="height:38px;padding:2px;cursor:pointer;" />
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+                  <div>
+                    <label class="wcm-label">Độ Dày Viền (px):</label>
+                    <input type="number" class="wcm-input" id="wmShapeBorderWidth" min="0" max="10" value="${curBorderWidth}" />
+                  </div>
+                  <div>
+                    <label class="wcm-label">Bo Góc (Radius px):</label>
+                    <input type="number" class="wcm-input" id="wmShapeRadius" min="0" max="100" value="${curRadius}" />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="ai-form-group">
-              <label class="ai-label">Màu Viền (Border):</label>
-              <input type="color" class="ce-input" id="wmShapeBorderColor" value="${existing?.borderColor && existing.borderColor.startsWith('#') ? existing.borderColor : '#cbd5e1'}" style="height:38px;cursor:pointer;padding:2px;" />
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div class="ai-form-group">
-              <label class="ai-label">Độ Dày Viền (px):</label>
-              <input type="number" class="ce-input" id="wmShapeBorderWidth" min="0" max="10" value="${existing?.borderWidth !== undefined ? existing.borderWidth : 1}" />
-            </div>
-            <div class="ai-form-group">
-              <label class="ai-label">Bo Góc (Border Radius px):</label>
-              <input type="number" class="ce-input" id="wmShapeRadius" min="0" max="100" value="${existing?.borderRadius !== undefined ? existing.borderRadius : 8}" />
+
+            <!-- CỘT PHẢI: LIVE PREVIEW -->
+            <div class="wcm-studio-preview-pane">
+              <div class="wcm-preview-header">
+                <div class="wcm-preview-title">
+                  <span class="wcm-live-dot"></span>
+                  <span>Xem Trước Hình Khối</span>
+                </div>
+                <span class="wcm-badge">Live Shape</span>
+              </div>
+              <div class="wcm-preview-stage" style="background:#f1f5f9;min-height:160px;padding:12px;">
+                <div id="wmShapeLiveCard" style="width:100%;height:100px;background:${curBg};border:${curBorderWidth}px solid ${curBorder};border-radius:${curRadius}px;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:12px;font-weight:600;">
+                  ${escapeHtml(curName)}
+                </div>
+              </div>
             </div>
           </div>
         `;
       } else if (type === 'button') {
-        titleEl.textContent = existing ? 'Chỉnh Sửa Nút Bấm Tương Tác' : 'Thêm Nút Bấm Tương Tác (Action Button)';
+        if (iconBadgeEl) iconBadgeEl.textContent = '🔘';
+        if (titleEl) titleEl.textContent = existing ? 'Chỉnh Sửa Nút Bấm Tương Tác' : 'Thêm Nút Bấm Tương Tác (Action Button)';
+        if (subtitleEl) subtitleEl.textContent = 'Thiết lập chuyển tab hoặc mở liên kết URL khi người xem click vào nút';
+        if (badgeEl) badgeEl.textContent = 'Action Button';
+        if (saveBtnTextEl) saveBtnTextEl.textContent = 'Lưu Nút Bấm';
+
         const tabs = DashboardState.present.tabs || [];
+        const curName = existing ? existing.name : '👉 Xem Chi Tiết';
+        const curAction = existing?.btnAction || 'tab';
+        const curTarget = existing?.btnTarget || (tabs[0]?.id || '');
+        const curBg = existing?.btnBg || '#004ea8';
+        const curColor = existing?.btnColor || '#ffffff';
+        const curRadius = existing?.borderRadius !== undefined ? existing.borderRadius : 8;
+
         bodyEl.innerHTML = `
-          <div class="ai-form-group">
-            <label class="ai-label">Nhãn Nút Bấm (Button Text):</label>
-            <input type="text" class="ce-input" id="wmBtnNameInput" value="${existing ? existing.name : '👉 Xem Chi Tiết'}" />
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-label">Hành Động Khi Nhấp (Action):</label>
-            <select class="ce-select" id="wmBtnActionSelect" style="width:100%;">
-              <option value="tab" ${!existing || existing.btnAction === 'tab' ? 'selected' : ''}>Chuyển Sang Tab Khác</option>
-              <option value="url" ${existing && existing.btnAction === 'url' ? 'selected' : ''}>Mở Đường Dẫn Liên Kết (URL)</option>
-            </select>
-          </div>
-          <div class="ai-form-group" id="wmBtnTabGroup">
-            <label class="ai-label">Chọn Tab Đích:</label>
-            <select class="ce-select" id="wmBtnTabSelect" style="width:100%;">
-              ${tabs.map(t => `<option value="${t.id}" ${existing && existing.btnTarget === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
-            </select>
-          </div>
-          <div class="ai-form-group" id="wmBtnUrlGroup" style="display:none;">
-            <label class="ai-label">Nhập Đường Dẫn URL (https://...):</label>
-            <input type="text" class="ce-input" id="wmBtnUrlInput" placeholder="https://..." value="${existing?.btnAction === 'url' ? (existing.btnTarget || '') : 'https://'}" />
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div class="ai-form-group">
-              <label class="ai-label">Màu Nền Nút:</label>
-              <input type="color" class="ce-input" id="wmBtnBgColor" value="${existing?.btnBg && existing.btnBg.startsWith('#') ? existing.btnBg : '#004ea8'}" style="height:38px;cursor:pointer;padding:2px;" />
+          <div class="wcm-studio-layout">
+            <div class="wcm-studio-form">
+              <!-- 1. NHÃN & ICON -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">1</span>
+                    <span>Nội Dung Nhãn Nút Bấm</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="wcm-label">Nhãn Hiển Thị (Text / Icon):</label>
+                  <input type="text" class="wcm-input" id="wmBtnNameInput" value="${escapeHtml(curName)}" />
+                  <div class="wcm-chips-row" id="wmBtnQuickIcons">
+                    <span style="font-size:11px;color:#64748b;font-weight:600;">Icon nhanh:</span>
+                    ${['👉', '🚀', '📊', '🔍', '⬇️', '🔗', '⚡', '📑', '🎯', '🛒'].map(ic => `
+                      <button type="button" class="wcm-chip-btn" data-icon="${ic}">${ic}</button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. HÀNH ĐỘNG KHI CLICK -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">2</span>
+                    <span>Hành Động Khi Nhấp Chuột (Action)</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                  <div>
+                    <label class="wcm-label">Loại Hành Động:</label>
+                    <select class="wcm-select" id="wmBtnActionSelect">
+                      <option value="tab" ${curAction === 'tab' ? 'selected' : ''}>📑 Chuyển Sang Tab Khác</option>
+                      <option value="url" ${curAction === 'url' ? 'selected' : ''}>🌐 Mở Đường Dẫn Liên Kết (URL)</option>
+                    </select>
+                  </div>
+                  <div id="wmBtnTabGroup" style="${curAction === 'tab' ? '' : 'display:none;'}">
+                    <label class="wcm-label">Chọn Tab Đích Đến:</label>
+                    <select class="wcm-select" id="wmBtnTabSelect">
+                      ${tabs.map(t => `<option value="${escapeHtml(t.id)}" ${t.id === curTarget ? 'selected' : ''}>📑 Tab: ${escapeHtml(t.name || t.id)}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div id="wmBtnUrlGroup" style="${curAction === 'url' ? '' : 'display:none;'}">
+                    <label class="wcm-label">Nhập Đường Dẫn URL (https://...):</label>
+                    <input type="text" class="wcm-input" id="wmBtnUrlInput" placeholder="https://google.com" value="${curAction === 'url' ? escapeHtml(curTarget) : 'https://'}" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. PHONG CÁCH & MÀU SẮC -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">3</span>
+                    <span>Phong Cách &amp; Màu Sắc</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="wcm-label">Mẫu Màu Nhanh (Color Presets):</label>
+                  <div class="wcm-swatches-grid" id="wmBtnColorPresets">
+                    <div class="wcm-swatch-item ${curBg === '#004ea8' ? 'active' : ''}" data-bg="#004ea8" data-color="#ffffff" style="background:#004ea8;" title="Navy Blue">✓</div>
+                    <div class="wcm-swatch-item ${curBg === '#0284c7' ? 'active' : ''}" data-bg="#0284c7" data-color="#ffffff" style="background:#0284c7;" title="Sky Blue">✓</div>
+                    <div class="wcm-swatch-item ${curBg === '#059669' ? 'active' : ''}" data-bg="#059669" data-color="#ffffff" style="background:#059669;" title="Emerald Green">✓</div>
+                    <div class="wcm-swatch-item ${curBg === '#7c3aed' ? 'active' : ''}" data-bg="#7c3aed" data-color="#ffffff" style="background:#7c3aed;" title="Royal Purple">✓</div>
+                    <div class="wcm-swatch-item ${curBg === '#dc2626' ? 'active' : ''}" data-bg="#dc2626" data-color="#ffffff" style="background:#dc2626;" title="Crimson Red">✓</div>
+                    <div class="wcm-swatch-item ${curBg === '#0f172a' ? 'active' : ''}" data-bg="#0f172a" data-color="#ffffff" style="background:#0f172a;" title="Obsidian Dark">✓</div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px;">
+                    <div>
+                      <label class="wcm-label">Màu Nền:</label>
+                      <input type="color" class="wcm-input" id="wmBtnBgColor" value="${curBg.startsWith('#') ? curBg : '#004ea8'}" style="height:38px;padding:2px;cursor:pointer;" />
+                    </div>
+                    <div>
+                      <label class="wcm-label">Màu Chữ:</label>
+                      <input type="color" class="wcm-input" id="wmBtnTextColor" value="${curColor.startsWith('#') ? curColor : '#ffffff'}" style="height:38px;padding:2px;cursor:pointer;" />
+                    </div>
+                    <div>
+                      <label class="wcm-label">Bo Góc (px):</label>
+                      <input type="number" class="wcm-input" id="wmBtnRadius" min="0" max="40" value="${curRadius}" />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="ai-form-group">
-              <label class="ai-label">Màu Chữ Nút:</label>
-              <input type="color" class="ce-input" id="wmBtnTextColor" value="${existing?.btnColor && existing.btnColor.startsWith('#') ? existing.btnColor : '#ffffff'}" style="height:38px;cursor:pointer;padding:2px;" />
+
+            <!-- CỘT PHẢI: LIVE PREVIEW -->
+            <div class="wcm-studio-preview-pane">
+              <div class="wcm-preview-header">
+                <div class="wcm-preview-title">
+                  <span class="wcm-live-dot"></span>
+                  <span>Xem Trước Nút Bấm</span>
+                </div>
+                <span class="wcm-badge">Interactive</span>
+              </div>
+              <div class="wcm-preview-stage" style="background:#f8fafc;padding:30px 16px;">
+                <button type="button" class="wcm-btn-mockup" id="wmBtnLiveMockup" style="background:${curBg};color:${curColor};border-radius:${curRadius}px;">
+                  <span id="wmBtnLiveText">${escapeHtml(curName)}</span>
+                </button>
+              </div>
+              <div style="font-size:11px;color:#64748b;line-height:1.4;">
+                💡 Di chuột qua nút bấm phía trên để trải nghiệm hiệu ứng nhấp chuột thực tế.
+              </div>
             </div>
           </div>
         `;
-        setTimeout(() => {
-          const actionSelect = document.getElementById('wmBtnActionSelect');
-          const tabGroup = document.getElementById('wmBtnTabGroup');
-          const urlGroup = document.getElementById('wmBtnUrlGroup');
-          function updateBtnActionUI() {
-            if (actionSelect.value === 'url') {
-              tabGroup.style.display = 'none';
-              urlGroup.style.display = 'block';
-            } else {
-              tabGroup.style.display = 'block';
-              urlGroup.style.display = 'none';
-            }
-          }
-          actionSelect?.addEventListener('change', updateBtnActionUI);
-          updateBtnActionUI();
-        }, 20);
       } else if (type === 'frame') {
-        titleEl.textContent = existing ? 'Chỉnh Sửa Khung Phân Vùng' : 'Thêm Khung Phân Vùng (Frame)';
+        if (iconBadgeEl) iconBadgeEl.textContent = '🖼️';
+        if (titleEl) titleEl.textContent = existing ? 'Chỉnh Sửa Khung Phân Vùng' : 'Thêm Khung Phân Vùng (Frame / Container)';
+        if (subtitleEl) subtitleEl.textContent = 'Tạo phân vùng bố cục trang nhã để gom nhóm các khối nội dung';
+        if (badgeEl) badgeEl.textContent = 'Container';
+        if (saveBtnTextEl) saveBtnTextEl.textContent = 'Lưu Khung';
+
+        const curName = existing ? existing.name : 'Khu Vực Phân Tích & Báo Cáo';
+        const curBg = existing?.bgColor || 'rgba(255,255,255,0.6)';
+        const curBorderColor = existing?.borderColor || '#cbd5e1';
+        const curBorderStyle = existing?.borderStyle || 'dashed';
+        const curBorderWidth = existing?.borderWidth !== undefined ? existing.borderWidth : 2;
+        const curRadius = existing?.borderRadius !== undefined ? existing.borderRadius : 12;
+
         bodyEl.innerHTML = `
-          <div class="ai-form-group">
-            <label class="ai-label">Tên Khung Phân Vùng:</label>
-            <input type="text" class="ce-input" id="wmFrameNameInput" value="${existing ? existing.name : 'Khu Vực Phân Tích'}" />
+          <div class="wcm-studio-layout">
+            <div class="wcm-studio-form">
+              <!-- 1. TÊN KHUNG -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">1</span>
+                    <span>Tên Khung Phân Vùng</span>
+                  </div>
+                </div>
+                <div>
+                  <input type="text" class="wcm-input" id="wmFrameNameInput" value="${escapeHtml(curName)}" placeholder="Nhập tên phân vùng..." />
+                </div>
+              </div>
+
+              <!-- 2. PHONG CÁCH KHUNG -->
+              <div class="wcm-section">
+                <div class="wcm-sec-header">
+                  <div class="wcm-sec-title">
+                    <span class="wcm-step-badge">2</span>
+                    <span>Phong Cách Bố Cục (Container Presets)</span>
+                  </div>
+                </div>
+                <div class="wcm-chips-row" id="wmFramePresets">
+                  <button type="button" class="wcm-chip-btn active" data-bg="rgba(255,255,255,0.6)" data-border="#cbd5e1" data-style="dashed">🪟 Mờ Kính (Frosted Glass)</button>
+                  <button type="button" class="wcm-chip-btn" data-bg="#ffffff" data-border="#e2e8f0" data-style="solid">📦 Card Trắng Viền Mềm</button>
+                  <button type="button" class="wcm-chip-btn" data-bg="#f8fafc" data-border="#cbd5e1" data-style="dotted">🎨 Khung Chấm (Dotted)</button>
+                  <button type="button" class="wcm-chip-btn" data-bg="rgba(240,249,255,0.7)" data-border="#7dd3fc" data-style="solid">💎 Soft Blue Frame</button>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+                  <div>
+                    <label class="wcm-label">Kiểu Viền (Border Style):</label>
+                    <select class="wcm-select" id="wmFrameBorderStyle">
+                      <option value="dashed" ${curBorderStyle === 'dashed' ? 'selected' : ''}>Nét đứt (Dashed)</option>
+                      <option value="solid" ${curBorderStyle === 'solid' ? 'selected' : ''}>Nét liền (Solid)</option>
+                      <option value="dotted" ${curBorderStyle === 'dotted' ? 'selected' : ''}>Chấm bi (Dotted)</option>
+                      <option value="none" ${curBorderStyle === 'none' ? 'selected' : ''}>Không viền (None)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="wcm-label">Bo Góc (Radius px):</label>
+                    <input type="number" class="wcm-input" id="wmFrameRadius" min="0" max="40" value="${curRadius}" />
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+                  <div>
+                    <label class="wcm-label">Màu Nền:</label>
+                    <input type="color" class="wcm-input" id="wmFrameBgColor" value="${curBg.startsWith('#') ? curBg : '#ffffff'}" style="height:38px;padding:2px;cursor:pointer;" />
+                  </div>
+                  <div>
+                    <label class="wcm-label">Màu Viền:</label>
+                    <input type="color" class="wcm-input" id="wmFrameBorderColor" value="${curBorderColor.startsWith('#') ? curBorderColor : '#cbd5e1'}" style="height:38px;padding:2px;cursor:pointer;" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CỘT PHẢI: LIVE PREVIEW -->
+            <div class="wcm-studio-preview-pane">
+              <div class="wcm-preview-header">
+                <div class="wcm-preview-title">
+                  <span class="wcm-live-dot"></span>
+                  <span>Xem Trước Khung</span>
+                </div>
+                <span class="wcm-badge">Container</span>
+              </div>
+              <div class="wcm-preview-stage" style="background:#f1f5f9;min-height:160px;padding:12px;">
+                <div id="wmFrameLiveCard" style="width:100%;height:100%;min-height:120px;background:${curBg};border:${curBorderWidth}px ${curBorderStyle} ${curBorderColor};border-radius:${curRadius}px;padding:12px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;">
+                  <span id="wmFrameLiveTitle" style="font-size:12px;font-weight:700;color:#0f172a;">${escapeHtml(curName)}</span>
+                  <span style="font-size:11px;color:#94a3b8;font-style:italic;">[Khu vực phân vùng trên Dashboard]</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (type === 'table') {
+        if (iconBadgeEl) iconBadgeEl.textContent = '📋';
+        if (titleEl) titleEl.textContent = existing ? 'Chỉnh Sửa Bảng Dữ Liệu' : 'Cấu Hình Bảng Dữ Liệu (Superset Table Studio)';
+        if (subtitleEl) subtitleEl.textContent = 'Bảng dữ liệu chi tiết và tổng hợp Group By đa chiều chuẩn Apache Superset';
+        if (badgeEl) badgeEl.textContent = 'Superset Studio';
+        if (saveBtnTextEl) saveBtnTextEl.textContent = 'Lưu Bảng Dữ Liệu';
+        const curName = existing ? existing.name : 'Bảng Dữ Liệu';
+        const curMode = existing?.queryMode || 'raw';
+        const curCols = existing?.columns || cols.slice(0, 8);
+        const curGroupBy = existing?.groupByCols || (cols[0] ? [cols[0]] : []);
+        const curMetrics = existing?.metrics || (cols[1] ? [{ col: cols[1], agg: 'sum', label: `Tổng ${cols[1]}` }] : []);
+        const showSTT = existing?.showRowNumber !== false;
+        const showTotals = existing?.showTotals !== false;
+        const showBars = existing?.showCellBars !== false;
+        const showSearch = existing?.showSearch !== false;
+        const showExport = existing?.showExport !== false;
+        const curPageSize = existing?.pageSize !== undefined ? existing.pageSize : 20;
+        const curDensity = existing?.density || 'normal';
+        const curRowLimit = existing?.rowLimit || 1000;
+
+        bodyEl.innerHTML = `
+          <div class="table-studio-split-container">
+            <!-- CỘT BÊN TRÁI: SIDEBAR CẤU HÌNH -->
+            <aside class="table-studio-sidebar">
+              <!-- 1. NGUỒN DỮ LIỆU & TIÊU ĐỀ -->
+              <div class="table-studio-sec">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">1</span>
+                    <span>Nguồn Dữ Liệu &amp; Tiêu Đề</span>
+                  </div>
+                  <span style="font-size:11px;color:#0284c7;font-weight:600;">Superset Studio</span>
+                </div>
+                <div class="ai-form-group" style="margin-bottom:8px;">
+                  <label class="ai-label">Nguồn dữ liệu (Sheet / File / Toàn bộ):</label>
+                  <select class="ce-select" id="wmTableSourceSelect" style="width:100%;">
+                    ${availableSources.map(s => `<option value="${escapeHtml(s.key)}" ${s.key === curSourceKey ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('')}
+                  </select>
+                  <div style="font-size:10.5px;color:var(--db-text-sub,#64748b);margin-top:3px;">
+                    💡 Hỗ trợ: Chọn sheet lẻ, toàn bộ sheet của 1 file hoặc tất cả các file đã tải.
+                  </div>
+                </div>
+                <div class="ai-form-group" style="margin-bottom:0;">
+                  <label class="ai-label">Tiêu đề bảng hiển thị:</label>
+                  <input type="text" class="ce-input" id="wmTableNameInput" value="${escapeHtml(curName)}" placeholder="Nhập tên bảng..." />
+                </div>
+              </div>
+
+              <!-- 2. CHẾ ĐỘ TRUY VẤN (QUERY MODE KIỂU APACHE SUPERSET) -->
+              <div class="table-studio-sec">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">2</span>
+                    <span>Chế Độ Dữ Liệu (Query Mode)</span>
+                  </div>
+                </div>
+                <div class="table-mode-toggle">
+                  <label class="table-mode-card ${curMode === 'raw' ? 'active' : ''}" id="cardModeRaw">
+                    <input type="radio" name="wmTableQueryMode" value="raw" ${curMode === 'raw' ? 'checked' : ''} style="margin-top:2px;" />
+                    <div>
+                      <div class="table-mode-title">📄 Bản Ghi Chi Tiết</div>
+                      <div class="table-mode-desc">Xem từng dòng dữ liệu, chọn cột.</div>
+                    </div>
+                  </label>
+                  <label class="table-mode-card ${curMode === 'aggregate' ? 'active' : ''}" id="cardModeAgg">
+                    <input type="radio" name="wmTableQueryMode" value="aggregate" ${curMode === 'aggregate' ? 'checked' : ''} style="margin-top:2px;" />
+                    <div>
+                      <div class="table-mode-title">📊 Tổng Hợp (Group By)</div>
+                      <div class="table-mode-desc">Gom nhóm Dimension &amp; Metrics.</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 3A. CẤU HÌNH CỘT CHO BẢN GHI CHI TIẾT (RAW MODE) -->
+              <div class="table-studio-sec" id="secTableRawCols" style="${curMode === 'raw' ? 'display:block;' : 'display:none;'}">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">3</span>
+                    <span>Chọn Cột Hiển Thị</span>
+                    <span class="dst-badge" id="wmTableColCountBadge" style="background:#e0f2fe;color:#0284c7;font-size:10.5px;padding:1px 6px;border-radius:10px;">${curCols.length}/${cols.length}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:4px;">
+                    <button type="button" class="dst-pbtn" id="btnTableSelectAllCols" title="Chọn tất cả các trường dữ liệu" style="padding:2px 7px;font-size:11px;font-weight:600;background:#0284c7;color:#fff;border-color:#0284c7;">✓ Tất cả</button>
+                    <button type="button" class="dst-pbtn" id="btnTableDeselectAllCols" title="Bỏ chọn toàn bộ" style="padding:2px 7px;font-size:11px;">✕ Bỏ chọn</button>
+                  </div>
+                </div>
+                <div style="margin-bottom:8px;">
+                  <input type="text" class="ce-input" id="inpTableColSearch" placeholder="🔍 Tìm nhanh cột..." style="height:28px;font-size:11px;padding:3px 8px;" />
+                </div>
+                <div class="table-col-chip-grid" id="wmTableColGrid">
+                  ${cols.map(c => `
+                    <label class="table-col-chip" data-col-name="${escapeHtml(c).toLowerCase()}">
+                      <input type="checkbox" class="wm-table-col-checkbox" value="${escapeHtml(c)}" ${curCols.includes(c) ? 'checked' : ''} />
+                      <span>${escapeHtml(c)}</span>
+                    </label>
+                  `).join('')}
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+                  <label class="ai-label" style="margin-bottom:0;white-space:nowrap;font-size:11.5px;">Giới hạn dòng:</label>
+                  <select class="ce-select" id="wmTableRowLimit" style="width:130px;height:28px;font-size:11.5px;">
+                    <option value="100" ${curRowLimit === 100 ? 'selected' : ''}>100 dòng</option>
+                    <option value="500" ${curRowLimit === 500 ? 'selected' : ''}>500 dòng</option>
+                    <option value="1000" ${curRowLimit === 1000 ? 'selected' : ''}>1.000 dòng</option>
+                    <option value="5000" ${curRowLimit === 5000 ? 'selected' : ''}>5.000 dòng</option>
+                    <option value="0" ${curRowLimit === 0 ? 'selected' : ''}>Tất cả</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- 3B. CẤU HÌNH NHÓM VÀ CHỈ SỐ CHO GROUP BY (AGGREGATE MODE) -->
+              <div class="table-studio-sec" id="secTableAggCols" style="${curMode === 'aggregate' ? 'display:block;' : 'display:none;'}">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">3</span>
+                    <span>Gom Nhóm &amp; Chỉ Số (Superset)</span>
+                  </div>
+                </div>
+                <div class="ai-form-group">
+                  <label class="ai-label" style="font-size:11.5px;">1. Cột Gom Nhóm (Dimensions):</label>
+                  <div class="table-col-chip-grid" id="wmTableGroupGrid" style="max-height:100px;">
+                    ${cols.map(c => `
+                      <label class="table-col-chip">
+                        <input type="checkbox" class="wm-table-group-checkbox" value="${escapeHtml(c)}" ${curGroupBy.includes(c) ? 'checked' : ''} />
+                        <span>${escapeHtml(c)}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <div class="ai-form-group" style="margin-top:8px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                    <label class="ai-label" style="margin-bottom:0;font-size:11.5px;">2. Chỉ Số Tính Toán (Metrics):</label>
+                    <button type="button" class="dst-pbtn" id="btnTableAddMetric" style="background:#0284c7;color:#fff;border-color:#0284c7;padding:2px 7px;font-size:11px;">➕ Thêm</button>
+                  </div>
+                  <div id="wmTableMetricsList">
+                    ${curMetrics.map(m => `
+                      <div class="table-metric-row">
+                        <select class="ce-select wm-metric-col-select" style="font-size:11px;">
+                          ${cols.map(c => `<option value="${escapeHtml(c)}" ${c === m.col ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                        </select>
+                        <select class="ce-select wm-metric-agg-select" style="font-size:11px;width:95px;">
+                          <option value="sum" ${m.agg === 'sum' ? 'selected' : ''}>SUM</option>
+                          <option value="avg" ${m.agg === 'avg' ? 'selected' : ''}>AVG</option>
+                          <option value="count" ${m.agg === 'count' ? 'selected' : ''}>COUNT</option>
+                          <option value="min" ${m.agg === 'min' ? 'selected' : ''}>MIN</option>
+                          <option value="max" ${m.agg === 'max' ? 'selected' : ''}>MAX</option>
+                          <option value="count_distinct" ${m.agg === 'count_distinct' ? 'selected' : ''}>COUNT DISTINCT</option>
+                        </select>
+                        <input type="text" class="ce-input wm-metric-label-input" value="${escapeHtml(m.label || '')}" placeholder="Tên hiển thị..." style="font-size:11px;" />
+                        <button type="button" class="dst-pbtn wm-btn-del-metric" style="color:#ef4444;border-color:#fca5a5;padding:2px 6px;" title="Xóa chỉ số">🗑️</button>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. TÙY CHỌN HIỂN THỊ NÂNG CAO (SUPERSET TABLE OPTIONS) -->
+              <div class="table-studio-sec">
+                <div class="table-studio-sec-header">
+                  <div class="table-studio-sec-title">
+                    <span class="table-studio-step-badge">4</span>
+                    <span>Tùy Chọn Hiển Thị (Visual Options)</span>
+                  </div>
+                </div>
+                <div class="table-opts-grid">
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowSTT" ${showSTT ? 'checked' : ''} />
+                    <span>🔢 Cột STT (Số Thứ Tự)</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowTotals" ${showTotals ? 'checked' : ''} />
+                    <span>∑ Dòng Tổng Cộng (Totals)</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowBars" ${showBars ? 'checked' : ''} />
+                    <span>📊 Cell Bars thanh đo số</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowSearch" ${showSearch ? 'checked' : ''} />
+                    <span>🔍 Ô Tìm Kiếm Nhanh</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmTableShowExport" ${showExport ? 'checked' : ''} />
+                    <span>📥 Nút Xuất Excel/CSV</span>
+                  </label>
+                  <label class="table-opt-label">
+                    <input type="checkbox" id="wmHideHeaderCheckbox" ${existing?.hideHeader ? 'checked' : ''} />
+                    <span>👁️ Ẩn tiêu đề trên Canvas</span>
+                  </label>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;">
+                  <div class="ai-form-group" style="margin-bottom:0;">
+                    <label class="ai-label" style="font-size:11.5px;">Phân trang (Page Size):</label>
+                    <select class="ce-select" id="wmTablePageSize" style="width:100%;font-size:11.5px;height:28px;">
+                      <option value="10" ${curPageSize === 10 ? 'selected' : ''}>10 dòng / trang</option>
+                      <option value="20" ${curPageSize === 20 ? 'selected' : ''}>20 dòng / trang</option>
+                      <option value="50" ${curPageSize === 50 ? 'selected' : ''}>50 dòng / trang</option>
+                      <option value="100" ${curPageSize === 100 ? 'selected' : ''}>100 dòng / trang</option>
+                      <option value="0" ${curPageSize === 0 ? 'selected' : ''}>Không phân trang</option>
+                    </select>
+                  </div>
+                  <div class="ai-form-group" style="margin-bottom:0;">
+                    <label class="ai-label" style="font-size:11.5px;">Mật độ (Table Density):</label>
+                    <select class="ce-select" id="wmTableDensity" style="width:100%;font-size:11.5px;height:28px;">
+                      <option value="compact" ${curDensity === 'compact' ? 'selected' : ''}>Nhỏ gọn (Compact)</option>
+                      <option value="normal" ${curDensity === 'normal' ? 'selected' : ''}>Chuẩn (Normal)</option>
+                      <option value="comfortable" ${curDensity === 'comfortable' ? 'selected' : ''}>Rộng rãi (Comfortable)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </aside>
+
+            <!-- CỘT BÊN PHẢI: BẢNG DEMO TRỰC TIẾP (LIVE DEMO PREVIEW PANE) -->
+            <main class="table-studio-preview-pane">
+              <div class="table-studio-preview-header">
+                <div class="table-studio-preview-title">
+                  <span class="table-studio-live-dot"></span>
+                  <span id="wmTableDemoHeaderTitle">Bản Xem Trước Trực Tiếp (Live Demo)</span>
+                  <span class="dst-badge" id="wmTableDemoBadge" style="background:#f1f5f9;color:#475569;font-size:11px;padding:2px 8px;font-weight:600;border:1px solid #cbd5e1;"></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button type="button" class="dst-pbtn" id="btnRefreshTableDemo" title="Tải lại bảng demo" style="font-size:11.5px;padding:3px 9px;">🔄 Cập nhật</button>
+                </div>
+              </div>
+              <div class="table-studio-preview-body" id="wmTableLivePreviewContainer">
+                <!-- Superset Table render trực tiếp ở đây -->
+              </div>
+            </main>
           </div>
         `;
       }
 
-      // Thêm tùy chọn Ẩn Header cho mọi loại widget
-      const hideHeaderHtml = `
-        <div class="ai-form-group" style="margin-top:8px;padding-top:10px;border-top:1px dashed var(--db-card-border);">
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--db-text-main);cursor:pointer;user-select:none;" title="Tắt thanh tiêu đề của widget trên Canvas để chỉ hiển thị nội dung bên trong">
-            <input type="checkbox" id="wmHideHeaderCheckbox" ${existing?.hideHeader ? 'checked' : ''} style="cursor:pointer;" />
-            <span>Ẩn thanh tiêu đề (Header) của widget (Chỉ hiển thị nội dung bên trong)</span>
-          </label>
-        </div>
-      `;
-      bodyEl.insertAdjacentHTML('beforeend', hideHeaderHtml);
+      // Thêm tùy chọn Ẩn Header cho các loại widget khác (Table đã tích hợp trong sidebar)
+      if (type !== 'table') {
+        const hideHeaderHtml = `
+          <div style="margin-top:14px;">
+            <label class="wcm-toggle-wrap" title="Tắt thanh tiêu đề của widget trên Canvas để chỉ hiển thị nội dung bên trong">
+              <input type="checkbox" id="wmHideHeaderCheckbox" ${existing?.hideHeader ? 'checked' : ''} />
+              <span>Ẩn thanh tiêu đề (Header) của widget trên Canvas (Chỉ hiển thị trọn vẹn nội dung)</span>
+            </label>
+          </div>
+        `;
+        bodyEl.insertAdjacentHTML('beforeend', hideHeaderHtml);
+      }
 
       if (modal) modal.classList.add('open');
 
       setTimeout(() => {
-        if (type === 'heading') {
+        if (type === 'kpi') {
+          const sSelect = document.getElementById('wmKpiSourceSelect');
+          const colSelect = document.getElementById('wmKpiColSelect');
+          const aggSelect = document.getElementById('wmKpiAggSelect');
+          const titleInput = document.getElementById('wmKpiTitleInput');
+          const prefixInput = document.getElementById('wmKpiPrefixInput');
+          const suffixInput = document.getElementById('wmKpiSuffixInput');
+          const iconInput = document.getElementById('wmKpiIconInput');
+          const cardBgInput = document.getElementById('wmKpiCardBg');
+          const textColorInput = document.getElementById('wmKpiTextColor');
+
+          function updateKpiLivePreview() {
+            const sKey = sSelect ? sSelect.value : curSourceKey;
+            const col = colSelect ? colSelect.value : '';
+            const agg = aggSelect ? aggSelect.value : 'sum';
+            const title = titleInput ? titleInput.value : `Tổng ${col}`;
+            const prefix = prefixInput ? prefixInput.value : '';
+            const suffix = suffixInput ? suffixInput.value : '';
+            const icon = iconInput ? iconInput.value : '📈';
+            const bg = cardBgInput ? cardBgInput.value : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
+            const textColor = textColorInput ? textColorInput.value : '#ffffff';
+
+            const cardEl = document.getElementById('wmKpiLiveCard');
+            const iconEl = document.getElementById('wmKpiLiveIcon');
+            const nameEl = document.getElementById('wmKpiLiveName');
+            const valEl = document.getElementById('wmKpiLiveValue');
+            const colHint = document.getElementById('wmKpiColHint');
+
+            if (colHint) colHint.textContent = col || 'Chưa chọn';
+            if (cardEl) {
+              cardEl.style.background = bg;
+              cardEl.style.color = textColor;
+              cardEl.style.border = (bg === '#ffffff' || bg.includes('#ffffff')) ? '1.5px solid #cbd5e1' : 'none';
+            }
+            if (iconEl) {
+              iconEl.textContent = icon;
+              iconEl.style.background = (bg === '#ffffff' || bg.includes('#ffffff')) ? '#f1f5f9' : 'rgba(255,255,255,0.2)';
+            }
+            if (nameEl) {
+              nameEl.textContent = title;
+              nameEl.style.color = (bg === '#ffffff' || bg.includes('#ffffff')) ? '#64748b' : 'rgba(255,255,255,0.85)';
+            }
+
+            const data = DataStore.getData(sKey, col);
+            const numVals = data.map(r => Number(r[col])).filter(n => !isNaN(n));
+            let result = 0;
+            if (agg === 'avg') result = numVals.length > 0 ? (numVals.reduce((a, b) => a + b, 0) / numVals.length) : 0;
+            else if (agg === 'count') result = numVals.length;
+            else if (agg === 'max') result = numVals.length > 0 ? Math.max(...numVals) : 0;
+            else if (agg === 'min') result = numVals.length > 0 ? Math.min(...numVals) : 0;
+            else result = numVals.reduce((a, b) => a + b, 0);
+
+            const formatted = new Intl.NumberFormat('vi-VN').format(Math.round(result));
+            if (valEl) valEl.textContent = `${prefix}${formatted}${suffix}`;
+          }
+
+          sSelect?.addEventListener('change', () => {
+            const newCols = DataStore.getColumns(sSelect.value);
+            if (colSelect) {
+              colSelect.innerHTML = newCols.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+              if (titleInput && !titleInput.dataset.userEdited && newCols[0]) {
+                titleInput.value = `Tổng ${newCols[0]}`;
+              }
+            }
+            updateKpiLivePreview();
+          });
+
+          colSelect?.addEventListener('change', () => {
+            if (titleInput && !titleInput.dataset.userEdited && colSelect.value) {
+              titleInput.value = `Tổng ${colSelect.value}`;
+            }
+            updateKpiLivePreview();
+          });
+
+          titleInput?.addEventListener('input', () => {
+            titleInput.dataset.userEdited = 'true';
+            updateKpiLivePreview();
+          });
+
+          [aggSelect, prefixInput, suffixInput, iconInput].forEach(el => {
+            el?.addEventListener('input', updateKpiLivePreview);
+            el?.addEventListener('change', updateKpiLivePreview);
+          });
+
+          // Chips icon
+          document.querySelectorAll('#wmKpiIconChips .wcm-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              document.querySelectorAll('#wmKpiIconChips .wcm-chip-btn').forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+              if (iconInput) iconInput.value = btn.dataset.icon;
+              updateKpiLivePreview();
+            });
+          });
+
+          // Chips unit
+          document.querySelectorAll('#wmKpiUnitChips .wcm-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              if (prefixInput) prefixInput.value = btn.dataset.prefix || '';
+              if (suffixInput) suffixInput.value = btn.dataset.suffix || '';
+              updateKpiLivePreview();
+            });
+          });
+
+          // Theme swatches
+          document.querySelectorAll('#wmKpiThemeGrid .wcm-swatch-item').forEach(sw => {
+            sw.addEventListener('click', () => {
+              document.querySelectorAll('#wmKpiThemeGrid .wcm-swatch-item').forEach(s => s.classList.remove('active'));
+              sw.classList.add('active');
+              if (cardBgInput) cardBgInput.value = sw.dataset.bg;
+              if (textColorInput) textColorInput.value = sw.dataset.color;
+              updateKpiLivePreview();
+            });
+          });
+
+          updateKpiLivePreview();
+        } else if (type === 'button') {
+          const nameInput = document.getElementById('wmBtnNameInput');
+          const actionSelect = document.getElementById('wmBtnActionSelect');
+          const tabGroup = document.getElementById('wmBtnTabGroup');
+          const urlGroup = document.getElementById('wmBtnUrlGroup');
+          const bgColorInput = document.getElementById('wmBtnBgColor');
+          const textColorInput = document.getElementById('wmBtnTextColor');
+          const radiusInput = document.getElementById('wmBtnRadius');
+          const liveMockup = document.getElementById('wmBtnLiveMockup');
+          const liveText = document.getElementById('wmBtnLiveText');
+
+          function updateBtnLivePreview() {
+            if (liveText && nameInput) liveText.textContent = nameInput.value || 'Nút Bấm';
+            if (liveMockup) {
+              if (bgColorInput) liveMockup.style.background = bgColorInput.value;
+              if (textColorInput) liveMockup.style.color = textColorInput.value;
+              if (radiusInput) liveMockup.style.borderRadius = `${radiusInput.value}px`;
+            }
+          }
+
+          function updateBtnActionUI() {
+            if (actionSelect?.value === 'url') {
+              if (tabGroup) tabGroup.style.display = 'none';
+              if (urlGroup) urlGroup.style.display = 'block';
+            } else {
+              if (tabGroup) tabGroup.style.display = 'block';
+              if (urlGroup) urlGroup.style.display = 'none';
+            }
+          }
+          actionSelect?.addEventListener('change', updateBtnActionUI);
+          updateBtnActionUI();
+
+          nameInput?.addEventListener('input', updateBtnLivePreview);
+          bgColorInput?.addEventListener('input', updateBtnLivePreview);
+          textColorInput?.addEventListener('input', updateBtnLivePreview);
+          radiusInput?.addEventListener('input', updateBtnLivePreview);
+
+          document.querySelectorAll('#wmBtnQuickIcons .wcm-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              if (nameInput) {
+                const cur = nameInput.value.replace(/^[^\s\w\d]+\s*/, '');
+                nameInput.value = `${btn.dataset.icon} ${cur}`.trim();
+                updateBtnLivePreview();
+              }
+            });
+          });
+
+          document.querySelectorAll('#wmBtnColorPresets .wcm-swatch-item').forEach(sw => {
+            sw.addEventListener('click', () => {
+              document.querySelectorAll('#wmBtnColorPresets .wcm-swatch-item').forEach(s => s.classList.remove('active'));
+              sw.classList.add('active');
+              if (bgColorInput) bgColorInput.value = sw.dataset.bg;
+              if (textColorInput) textColorInput.value = sw.dataset.color;
+              updateBtnLivePreview();
+            });
+          });
+
+          updateBtnLivePreview();
+        } else if (type === 'heading') {
           bindCanvaBarEvents('wmHeading', 'wmHeadingTextInput', 'wmHeadingPreviewBox');
+          document.querySelectorAll('#wmHeadingPresets .wcm-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const sizeEl = document.getElementById('wmHeadingFontSize');
+              const boldBtn = document.getElementById('wmHeadingBoldBtn');
+              if (sizeEl) sizeEl.value = btn.dataset.size;
+              if (boldBtn) {
+                if (btn.dataset.bold === 'true') boldBtn.classList.add('active');
+                else boldBtn.classList.remove('active');
+              }
+              const prev = document.getElementById('wmHeadingPreviewBox');
+              if (prev && sizeEl) {
+                prev.style.fontSize = `${sizeEl.value}px`;
+                prev.style.fontWeight = btn.dataset.bold === 'true' ? 'bold' : 'normal';
+              }
+            });
+          });
+          document.querySelectorAll('#wmHeadingBgToggle .wcm-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              document.querySelectorAll('#wmHeadingBgToggle .wcm-chip-btn').forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+              const prev = document.getElementById('wmHeadingPreviewBox');
+              if (prev) prev.style.background = btn.dataset.bg;
+            });
+          });
         } else if (type === 'text') {
           bindCanvaBarEvents('wmText', 'wmTextContent', 'wmTextPreviewBox');
+          document.querySelectorAll('#wmTextPresets .wcm-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const prev = document.getElementById('wmTextPreviewBox');
+              if (!prev) return;
+              if (btn.dataset.preset === 'info') {
+                prev.style.background = '#f0f9ff';
+                prev.style.borderLeft = '4px solid #0284c7';
+                prev.style.color = '#0369a1';
+              } else if (btn.dataset.preset === 'note') {
+                prev.style.background = '#fffbeb';
+                prev.style.borderLeft = '4px solid #f59e0b';
+                prev.style.color = '#b45309';
+              } else if (btn.dataset.preset === 'success') {
+                prev.style.background = '#f0fdf4';
+                prev.style.borderLeft = '4px solid #10b981';
+                prev.style.color = '#047857';
+              } else {
+                prev.style.background = '#ffffff';
+                prev.style.border = '1px solid #e2e8f0';
+                prev.style.color = '#0f172a';
+              }
+            });
+          });
+        } else if (type === 'frame') {
+          const nameInput = document.getElementById('wmFrameNameInput');
+          const bgInput = document.getElementById('wmFrameBgColor');
+          const borderInput = document.getElementById('wmFrameBorderColor');
+          const styleSelect = document.getElementById('wmFrameBorderStyle');
+          const radiusInput = document.getElementById('wmFrameRadius');
+          const liveCard = document.getElementById('wmFrameLiveCard');
+          const liveTitle = document.getElementById('wmFrameLiveTitle');
+
+          function updateFrameLivePreview() {
+            if (liveTitle && nameInput) liveTitle.textContent = nameInput.value || 'Khung Phân Vùng';
+            if (liveCard) {
+              if (bgInput) liveCard.style.background = bgInput.value;
+              if (borderInput && styleSelect) {
+                liveCard.style.border = styleSelect.value === 'none' ? 'none' : `2px ${styleSelect.value} ${borderInput.value}`;
+              }
+              if (radiusInput) liveCard.style.borderRadius = `${radiusInput.value}px`;
+            }
+          }
+
+          nameInput?.addEventListener('input', updateFrameLivePreview);
+          bgInput?.addEventListener('input', updateFrameLivePreview);
+          borderInput?.addEventListener('input', updateFrameLivePreview);
+          styleSelect?.addEventListener('change', updateFrameLivePreview);
+          radiusInput?.addEventListener('input', updateFrameLivePreview);
+
+          document.querySelectorAll('#wmFramePresets .wcm-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              document.querySelectorAll('#wmFramePresets .wcm-chip-btn').forEach(b => b.classList.remove('active'));
+              btn.classList.add('active');
+              if (bgInput && btn.dataset.bg) bgInput.value = btn.dataset.bg.startsWith('#') ? btn.dataset.bg : '#ffffff';
+              if (borderInput && btn.dataset.border) borderInput.value = btn.dataset.border.startsWith('#') ? btn.dataset.border : '#cbd5e1';
+              if (styleSelect && btn.dataset.style) styleSelect.value = btn.dataset.style;
+              updateFrameLivePreview();
+            });
+          });
+
+          updateFrameLivePreview();
+        } else if (type === 'shape') {
+          const typeSelect = document.getElementById('wmShapeTypeSelect');
+          const nameInput = document.getElementById('wmShapeNameInput');
+          const bgInput = document.getElementById('wmShapeBgColor');
+          const borderInput = document.getElementById('wmShapeBorderColor');
+          const widthInput = document.getElementById('wmShapeBorderWidth');
+          const radiusInput = document.getElementById('wmShapeRadius');
+          const liveCard = document.getElementById('wmShapeLiveCard');
+
+          function updateShapeLivePreview() {
+            if (!liveCard) return;
+            const st = typeSelect ? typeSelect.value : 'rectangle';
+            const nm = nameInput ? nameInput.value : 'Hình Khối';
+            const bg = bgInput ? bgInput.value : '#ffffff';
+            const bc = borderInput ? borderInput.value : '#cbd5e1';
+            const bw = widthInput ? widthInput.value : 1;
+            const rd = radiusInput ? radiusInput.value : 8;
+
+            liveCard.textContent = nm;
+            liveCard.style.background = bg;
+            liveCard.style.borderColor = bc;
+            liveCard.style.borderWidth = `${bw}px`;
+            liveCard.style.borderStyle = 'solid';
+
+            if (st === 'circle') {
+              liveCard.style.borderRadius = '50%';
+              liveCard.style.width = '100px';
+              liveCard.style.height = '100px';
+              liveCard.style.margin = '0 auto';
+            } else if (st === 'line') {
+              liveCard.style.height = '2px';
+              liveCard.style.borderRadius = '0px';
+              liveCard.style.background = bc;
+              liveCard.textContent = '';
+            } else {
+              liveCard.style.borderRadius = `${rd}px`;
+              liveCard.style.width = '100%';
+              liveCard.style.height = '100px';
+            }
+          }
+
+          [typeSelect, nameInput, bgInput, borderInput, widthInput, radiusInput].forEach(el => {
+            el?.addEventListener('input', updateShapeLivePreview);
+            el?.addEventListener('change', updateShapeLivePreview);
+          });
+
+          updateShapeLivePreview();
+        } else if (type === 'table') {
+          const cardRaw = document.getElementById('cardModeRaw');
+          const cardAgg = document.getElementById('cardModeAgg');
+          const secRaw = document.getElementById('secTableRawCols');
+          const secAgg = document.getElementById('secTableAggCols');
+          const modeRadios = document.querySelectorAll('input[name="wmTableQueryMode"]');
+
+          // Hàm cập nhật Live Demo Preview tức thì
+          const updateTableLiveDemo = () => {
+            const previewContainer = document.getElementById('wmTableLivePreviewContainer');
+            if (!previewContainer) return;
+
+            const sourceKey = document.getElementById('wmTableSourceSelect')?.value || '';
+            const queryMode = document.querySelector('input[name="wmTableQueryMode"]:checked')?.value || 'raw';
+            const name = document.getElementById('wmTableNameInput')?.value.trim() || 'Bảng Dữ Liệu';
+            const showRowNumber = Boolean(document.getElementById('wmTableShowSTT')?.checked);
+            const showTotals = Boolean(document.getElementById('wmTableShowTotals')?.checked);
+            const showCellBars = Boolean(document.getElementById('wmTableShowBars')?.checked);
+            const showSearch = Boolean(document.getElementById('wmTableShowSearch')?.checked);
+            const showExport = Boolean(document.getElementById('wmTableShowExport')?.checked);
+            const pageSize = Number(document.getElementById('wmTablePageSize')?.value !== undefined ? document.getElementById('wmTablePageSize').value : 20);
+            const density = document.getElementById('wmTableDensity')?.value || 'normal';
+            const rowLimit = Number(document.getElementById('wmTableRowLimit')?.value || 1000);
+
+            const rawCols = Array.from(document.querySelectorAll('#wmTableColGrid .wm-table-col-checkbox:checked')).map(cb => cb.value);
+            const groupByCols = Array.from(document.querySelectorAll('#wmTableGroupGrid .wm-table-group-checkbox:checked')).map(cb => cb.value);
+            const metrics = [];
+            document.querySelectorAll('#wmTableMetricsList .table-metric-row').forEach(row => {
+              const col = row.querySelector('.wm-metric-col-select')?.value;
+              const agg = row.querySelector('.wm-metric-agg-select')?.value || 'sum';
+              const label = row.querySelector('.wm-metric-label-input')?.value.trim() || `${agg.toUpperCase()}(${col})`;
+              if (col) metrics.push({ col, agg, label });
+            });
+
+            // Cập nhật badge số lượng cột đã chọn
+            const totalCols = document.querySelectorAll('#wmTableColGrid .wm-table-col-checkbox').length;
+            const countBadge = document.getElementById('wmTableColCountBadge');
+            if (countBadge) countBadge.textContent = `${rawCols.length}/${totalCols}`;
+
+            // Cập nhật badge thông tin trên header preview
+            const demoBadge = document.getElementById('wmTableDemoBadge');
+            if (demoBadge) {
+              if (queryMode === 'raw') {
+                const limitText = rowLimit === 0 ? 'Toàn bộ dòng' : `Tối đa ${rowLimit.toLocaleString('vi-VN')} dòng`;
+                demoBadge.textContent = `Bản ghi chi tiết • ${rawCols.length} cột • ${limitText}`;
+              } else {
+                demoBadge.textContent = `Tổng hợp • ${groupByCols.length} Dimension • ${metrics.length} Metric`;
+              }
+            }
+
+            // Cập nhật tiêu đề bảng trên header preview
+            const demoTitle = document.getElementById('wmTableDemoHeaderTitle');
+            if (demoTitle) {
+              demoTitle.textContent = name ? `Live Demo: ${name}` : 'Bản Xem Trước Trực Tiếp (Live Demo)';
+            }
+
+            const mockItem = {
+              id: 'demo_table_preview',
+              type: 'table',
+              name: name,
+              dataSourceKey: sourceKey,
+              queryMode: queryMode,
+              columns: rawCols.length > 0 ? rawCols : DataStore.getColumns(sourceKey).slice(0, 8),
+              groupByCols: groupByCols.length > 0 ? groupByCols : [DataStore.getColumns(sourceKey)[0] || 'Nhóm'],
+              metrics: metrics.length > 0 ? metrics : [{ col: DataStore.getColumns(sourceKey)[1] || 'Doanh Thu', agg: 'sum', label: `Tổng ${DataStore.getColumns(sourceKey)[1] || 'Doanh Thu'}` }],
+              showRowNumber,
+              showTotals,
+              showCellBars,
+              showSearch,
+              showExport,
+              pageSize,
+              density,
+              rowLimit,
+              tabId: DashboardState.present.activeTabId,
+              _page: 1
+            };
+
+            renderSupersetTable(mockItem, previewContainer);
+          };
+
+          modeRadios.forEach(r => {
+            r.addEventListener('change', (e) => {
+              const val = e.target.value;
+              cardRaw?.classList.toggle('active', val === 'raw');
+              cardAgg?.classList.toggle('active', val === 'aggregate');
+              if (secRaw) secRaw.style.display = val === 'raw' ? 'block' : 'none';
+              if (secAgg) secAgg.style.display = val === 'aggregate' ? 'block' : 'none';
+              updateTableLiveDemo();
+            });
+          });
+
+          // Thay đổi nguồn dữ liệu: nạp lại cột và render lại Live Demo
+          document.getElementById('wmTableSourceSelect')?.addEventListener('change', (e) => {
+            const newKey = e.target.value;
+            const newCols = DataStore.getColumns(newKey);
+            const gridRaw = document.getElementById('wmTableColGrid');
+            if (gridRaw) {
+              gridRaw.innerHTML = newCols.map(c => `
+                <label class="table-col-chip" data-col-name="${escapeHtml(c).toLowerCase()}">
+                  <input type="checkbox" class="wm-table-col-checkbox" value="${escapeHtml(c)}" checked />
+                  <span>${escapeHtml(c)}</span>
+                </label>
+              `).join('');
+            }
+            const gridGroup = document.getElementById('wmTableGroupGrid');
+            if (gridGroup) {
+              gridGroup.innerHTML = newCols.map((c, i) => `
+                <label class="table-col-chip">
+                  <input type="checkbox" class="wm-table-group-checkbox" value="${escapeHtml(c)}" ${i === 0 ? 'checked' : ''} />
+                  <span>${escapeHtml(c)}</span>
+                </label>
+              `).join('');
+            }
+            document.querySelectorAll('#wmTableMetricsList .wm-metric-col-select').forEach(sel => {
+              sel.innerHTML = newCols.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            });
+            updateTableLiveDemo();
+          });
+
+          // Tìm nhanh cột
+          document.getElementById('inpTableColSearch')?.addEventListener('input', (e) => {
+            const q = e.target.value.toLowerCase().trim();
+            document.querySelectorAll('#wmTableColGrid .table-col-chip').forEach(chip => {
+              const name = chip.getAttribute('data-col-name') || '';
+              chip.style.display = !q || name.includes(q) ? 'flex' : 'none';
+            });
+          });
+
+          // Nút chọn tất cả / bỏ chọn cột
+          document.getElementById('btnTableSelectAllCols')?.addEventListener('click', () => {
+            document.querySelectorAll('#wmTableColGrid .wm-table-col-checkbox').forEach(cb => { cb.checked = true; });
+            updateTableLiveDemo();
+          });
+          document.getElementById('btnTableDeselectAllCols')?.addEventListener('click', () => {
+            document.querySelectorAll('#wmTableColGrid .wm-table-col-checkbox').forEach(cb => { cb.checked = false; });
+            updateTableLiveDemo();
+          });
+
+          // Bắt sự kiện thay đổi checkbox cột Raw & Group
+          document.getElementById('wmTableColGrid')?.addEventListener('change', (e) => {
+            if (e.target.matches('.wm-table-col-checkbox')) {
+              updateTableLiveDemo();
+            }
+          });
+          document.getElementById('wmTableGroupGrid')?.addEventListener('change', (e) => {
+            if (e.target.matches('.wm-table-group-checkbox')) {
+              updateTableLiveDemo();
+            }
+          });
+
+          // Quản lý Metrics (Thêm / Sửa / Xóa)
+          const metricsList = document.getElementById('wmTableMetricsList');
+          document.getElementById('btnTableAddMetric')?.addEventListener('click', () => {
+            if (!metricsList) return;
+            const curSource = document.getElementById('wmTableSourceSelect')?.value;
+            const curCols = DataStore.getColumns(curSource);
+            const defaultCol = curCols[1] || curCols[0] || 'Cột';
+            const row = document.createElement('div');
+            row.className = 'table-metric-row';
+            row.innerHTML = `
+              <select class="ce-select wm-metric-col-select" style="font-size:11px;">
+                ${curCols.map(c => `<option value="${escapeHtml(c)}" ${c === defaultCol ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+              </select>
+              <select class="ce-select wm-metric-agg-select" style="font-size:11px;width:95px;">
+                <option value="sum" selected>SUM</option>
+                <option value="avg">AVG</option>
+                <option value="count">COUNT</option>
+                <option value="min">MIN</option>
+                <option value="max">MAX</option>
+                <option value="count_distinct">COUNT DISTINCT</option>
+              </select>
+              <input type="text" class="ce-input wm-metric-label-input" value="Tổng ${escapeHtml(defaultCol)}" placeholder="Tên hiển thị..." style="font-size:11px;" />
+              <button type="button" class="dst-pbtn wm-btn-del-metric" style="color:#ef4444;border-color:#fca5a5;padding:2px 6px;" title="Xóa chỉ số">🗑️</button>
+            `;
+            metricsList.appendChild(row);
+            updateTableLiveDemo();
+          });
+
+          metricsList?.addEventListener('change', (e) => {
+            if (e.target.matches('.wm-metric-col-select, .wm-metric-agg-select')) {
+              const r = e.target.closest('.table-metric-row');
+              const colSel = r?.querySelector('.wm-metric-col-select');
+              const aggSel = r?.querySelector('.wm-metric-agg-select');
+              const lblInput = r?.querySelector('.wm-metric-label-input');
+              if (colSel && aggSel && lblInput && !lblInput.dataset.userEdited) {
+                const aggNames = { sum: 'Tổng', avg: 'Trung bình', count: 'Số lượng', min: 'Nhỏ nhất', max: 'Lớn nhất', count_distinct: 'Đếm duy nhất' };
+                lblInput.value = `${aggNames[aggSel.value] || aggSel.value.toUpperCase()} ${colSel.value}`;
+              }
+              updateTableLiveDemo();
+            }
+          });
+
+          metricsList?.addEventListener('input', (e) => {
+            if (e.target.matches('.wm-metric-label-input')) {
+              e.target.dataset.userEdited = 'true';
+              updateTableLiveDemo();
+            }
+          });
+
+          metricsList?.addEventListener('click', (e) => {
+            const delBtn = e.target.closest('.wm-btn-del-metric');
+            if (delBtn) {
+              const r = delBtn.closest('.table-metric-row');
+              if (metricsList.children.length > 1) {
+                r?.remove();
+                updateTableLiveDemo();
+              } else {
+                showToast('Bảng cần có ít nhất 1 chỉ số đo lường!', 'warn');
+              }
+            }
+          });
+
+          // Tùy chọn hiển thị & phân trang & mật độ
+          ['wmTableShowSTT', 'wmTableShowTotals', 'wmTableShowBars', 'wmTableShowSearch', 'wmTableShowExport'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', updateTableLiveDemo);
+          });
+
+          ['wmTablePageSize', 'wmTableDensity', 'wmTableRowLimit'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', updateTableLiveDemo);
+          });
+
+          document.getElementById('wmTableNameInput')?.addEventListener('input', updateTableLiveDemo);
+          document.getElementById('btnRefreshTableDemo')?.addEventListener('click', updateTableLiveDemo);
+
+          // Khởi chạy ngay bảng demo khi mở modal
+          updateTableLiveDemo();
         }
       }, 20);
     },
@@ -3894,7 +5996,16 @@ ${expectedOutput}
         const modalBox = modal.querySelector('.db-simple-box');
         if (modalBox) {
           modalBox.style.maxWidth = '540px';
+          modalBox.style.width = '';
           modalBox.style.maxHeight = '90vh';
+          modalBox.style.height = '';
+        }
+        const bodyEl = modal.querySelector('.db-simple-body');
+        if (bodyEl) {
+          bodyEl.style.overflow = 'auto';
+          bodyEl.style.padding = '20px';
+          bodyEl.style.maxHeight = 'calc(90vh - 120px)';
+          bodyEl.style.height = '';
         }
       }
     },
@@ -3909,6 +6020,14 @@ ${expectedOutput}
         const col = document.getElementById('wmFilterColSelect').value;
         const fType = document.getElementById('wmFilterTypeSelect')?.value || 'range';
         const parentId = document.getElementById('wmFilterParentSelect')?.value || '';
+        const targetTab = document.getElementById('wmFilterTargetTabSelect')?.value || 'current';
+        const targetScope = document.getElementById('wmFilterTargetScopeSelect')?.value || 'all';
+        const targetChartIds = [];
+        if (targetScope === 'custom') {
+          document.querySelectorAll('.wm-target-chart-chk:checked').forEach(chk => {
+            targetChartIds.push(chk.value);
+          });
+        }
         let op = document.getElementById('wmFilterOpSelect')?.value;
         if (!op) {
           if (fType === 'range') op = 'between';
@@ -3928,6 +6047,9 @@ ${expectedOutput}
             item.operator = op;
             item.name = name;
             item.hideHeader = hideHeader;
+            item.targetTab = targetTab;
+            item.targetScope = targetScope;
+            item.targetChartIds = targetChartIds;
           }
         } else {
           const newId = 'filter_' + Date.now();
@@ -3942,33 +6064,56 @@ ${expectedOutput}
             parentFilterId: parentId,
             operator: op,
             hideHeader: hideHeader,
+            targetTab: targetTab,
+            targetScope: targetScope,
+            targetChartIds: targetChartIds,
             tabId: DashboardState.present.activeTabId,
             pos: getNextAvailablePosition(initW, 105)
           });
           DashboardState.selectedItemId = newId;
         }
       } else if (this.currentType === 'kpi') {
-        const col = document.getElementById('wmKpiColSelect').value;
-        const agg = document.getElementById('wmKpiAggSelect').value;
-        const name = document.getElementById('wmKpiTitleInput').value.trim() || `Tổng ${col}`;
-        const prefix = document.getElementById('wmKpiPrefixInput').value;
-        const suffix = document.getElementById('wmKpiSuffixInput').value;
+        const sKey = document.getElementById('wmKpiSourceSelect')?.value || '';
+        const col = document.getElementById('wmKpiColSelect')?.value || '';
+        const agg = document.getElementById('wmKpiAggSelect')?.value || 'sum';
+        const name = document.getElementById('wmKpiTitleInput')?.value.trim() || `Tổng ${col}`;
+        const prefix = document.getElementById('wmKpiPrefixInput')?.value || '';
+        const suffix = document.getElementById('wmKpiSuffixInput')?.value || '';
+        const icon = document.getElementById('wmKpiIconInput')?.value || '📈';
+        const cardBg = document.getElementById('wmKpiCardBg')?.value || 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
+        const textColor = document.getElementById('wmKpiTextColor')?.value || '#ffffff';
+
         if (this.editingItemId) {
           const item = DashboardState.present.items.find(i => i.id === this.editingItemId);
-          if (item) { item.metricColumn = col; item.aggregation = agg; item.name = name; item.prefix = prefix; item.suffix = suffix; item.hideHeader = hideHeader; }
+          if (item) {
+            if (sKey) item.dataSourceKey = sKey;
+            item.metricColumn = col;
+            item.aggregation = agg;
+            item.name = name;
+            item.prefix = prefix;
+            item.suffix = suffix;
+            item.icon = icon;
+            item.cardBg = cardBg;
+            item.color = textColor;
+            item.hideHeader = hideHeader;
+          }
         } else {
           const newId = 'kpi_' + Date.now();
           DashboardState.present.items.push({
             id: newId,
             type: 'kpi',
             name: name,
+            dataSourceKey: sKey,
             metricColumn: col,
             aggregation: agg,
             prefix: prefix,
             suffix: suffix,
+            icon: icon,
+            cardBg: cardBg,
+            color: textColor,
             hideHeader: hideHeader,
             tabId: DashboardState.present.activeTabId,
-            pos: getNextAvailablePosition(260, 90)
+            pos: getNextAvailablePosition(270, 110)
           });
           DashboardState.selectedItemId = newId;
         }
@@ -4088,14 +6233,15 @@ ${expectedOutput}
           DashboardState.selectedItemId = newId;
         }
       } else if (this.currentType === 'button') {
-        const name = document.getElementById('wmBtnNameInput').value.trim() || 'Nút Bấm';
-        const btnAction = document.getElementById('wmBtnActionSelect').value;
-        const btnTarget = btnAction === 'url' ? document.getElementById('wmBtnUrlInput').value.trim() : document.getElementById('wmBtnTabSelect').value;
-        const btnBg = document.getElementById('wmBtnBgColor').value;
-        const btnColor = document.getElementById('wmBtnTextColor').value;
+        const name = document.getElementById('wmBtnNameInput')?.value.trim() || 'Nút Bấm';
+        const btnAction = document.getElementById('wmBtnActionSelect')?.value || 'tab';
+        const btnTarget = btnAction === 'url' ? document.getElementById('wmBtnUrlInput')?.value.trim() : document.getElementById('wmBtnTabSelect')?.value;
+        const btnBg = document.getElementById('wmBtnBgColor')?.value || '#004ea8';
+        const btnColor = document.getElementById('wmBtnTextColor')?.value || '#ffffff';
+        const btnRadius = Number(document.getElementById('wmBtnRadius')?.value) || 8;
         if (this.editingItemId) {
           const item = DashboardState.present.items.find(i => i.id === this.editingItemId);
-          if (item) { item.name = name; item.btnAction = btnAction; item.btnTarget = btnTarget; item.btnBg = btnBg; item.btnColor = btnColor; item.hideHeader = hideHeader; }
+          if (item) { item.name = name; item.btnAction = btnAction; item.btnTarget = btnTarget; item.btnBg = btnBg; item.btnColor = btnColor; item.borderRadius = btnRadius; item.hideHeader = hideHeader; }
         } else {
           const newId = 'btn_' + Date.now();
           DashboardState.present.items.push({
@@ -4106,6 +6252,7 @@ ${expectedOutput}
             btnTarget: btnTarget,
             btnBg: btnBg,
             btnColor: btnColor,
+            borderRadius: btnRadius,
             hideHeader: hideHeader,
             tabId: DashboardState.present.activeTabId,
             pos: getNextAvailablePosition(200, 50)
@@ -4113,19 +6260,105 @@ ${expectedOutput}
           DashboardState.selectedItemId = newId;
         }
       } else if (this.currentType === 'frame') {
-        const name = document.getElementById('wmFrameNameInput').value.trim() || 'Khung Phân Vùng';
+        const name = document.getElementById('wmFrameNameInput')?.value.trim() || 'Khung Phân Vùng';
+        const bgColor = document.getElementById('wmFrameBgColor')?.value || 'rgba(255,255,255,0.6)';
+        const borderColor = document.getElementById('wmFrameBorderColor')?.value || '#cbd5e1';
+        const borderStyle = document.getElementById('wmFrameBorderStyle')?.value || 'dashed';
+        const borderRadius = Number(document.getElementById('wmFrameRadius')?.value) || 12;
+
         if (this.editingItemId) {
           const item = DashboardState.present.items.find(i => i.id === this.editingItemId);
-          if (item) { item.name = name; item.hideHeader = hideHeader; }
+          if (item) {
+            item.name = name;
+            item.bgColor = bgColor;
+            item.borderColor = borderColor;
+            item.borderStyle = borderStyle;
+            item.borderRadius = borderRadius;
+            item.borderWidth = 2;
+            item.hideHeader = hideHeader;
+          }
         } else {
           const newId = 'frame_' + Date.now();
           DashboardState.present.items.push({
             id: newId,
             type: 'frame',
             name: name,
+            bgColor: bgColor,
+            borderColor: borderColor,
+            borderStyle: borderStyle,
+            borderRadius: borderRadius,
+            borderWidth: 2,
             hideHeader: hideHeader,
             tabId: DashboardState.present.activeTabId,
             pos: getNextAvailablePosition(1160, 420)
+          });
+          DashboardState.selectedItemId = newId;
+        }
+      } else if (this.currentType === 'table') {
+        const name = document.getElementById('wmTableNameInput')?.value.trim() || 'Bảng Dữ Liệu';
+        const sourceKey = document.getElementById('wmTableSourceSelect')?.value || '';
+        const queryMode = document.querySelector('input[name="wmTableQueryMode"]:checked')?.value || 'raw';
+        const showRowNumber = Boolean(document.getElementById('wmTableShowSTT')?.checked);
+        const showTotals = Boolean(document.getElementById('wmTableShowTotals')?.checked);
+        const showCellBars = Boolean(document.getElementById('wmTableShowBars')?.checked);
+        const showSearch = Boolean(document.getElementById('wmTableShowSearch')?.checked);
+        const showExport = Boolean(document.getElementById('wmTableShowExport')?.checked);
+        const pageSize = Number(document.getElementById('wmTablePageSize')?.value !== undefined ? document.getElementById('wmTablePageSize').value : 20);
+        const density = document.getElementById('wmTableDensity')?.value || 'normal';
+        const rowLimit = Number(document.getElementById('wmTableRowLimit')?.value || 1000);
+
+        const rawCols = Array.from(document.querySelectorAll('.wm-table-col-checkbox:checked')).map(cb => cb.value);
+        const groupByCols = Array.from(document.querySelectorAll('.wm-table-group-checkbox:checked')).map(cb => cb.value);
+        const metrics = [];
+        document.querySelectorAll('.table-metric-row').forEach(row => {
+          const col = row.querySelector('.wm-metric-col-select')?.value;
+          const agg = row.querySelector('.wm-metric-agg-select')?.value || 'sum';
+          const label = row.querySelector('.wm-metric-label-input')?.value.trim() || `${agg.toUpperCase()}(${col})`;
+          if (col) metrics.push({ col, agg, label });
+        });
+
+        if (this.editingItemId) {
+          const item = DashboardState.present.items.find(i => i.id === this.editingItemId);
+          if (item) {
+            item.name = name;
+            item.dataSourceKey = sourceKey;
+            item.queryMode = queryMode;
+            item.columns = rawCols.length > 0 ? rawCols : DataStore.getColumns(sourceKey).slice(0, 8);
+            item.groupByCols = groupByCols.length > 0 ? groupByCols : [DataStore.getColumns(sourceKey)[0] || 'Nhóm'];
+            item.metrics = metrics.length > 0 ? metrics : [{ col: DataStore.getColumns(sourceKey)[1] || 'Doanh Thu', agg: 'sum', label: `Tổng ${DataStore.getColumns(sourceKey)[1] || 'Doanh Thu'}` }];
+            item.showRowNumber = showRowNumber;
+            item.showTotals = showTotals;
+            item.showCellBars = showCellBars;
+            item.showSearch = showSearch;
+            item.showExport = showExport;
+            item.pageSize = pageSize;
+            item.density = density;
+            item.rowLimit = rowLimit;
+            item.hideHeader = hideHeader;
+            item._page = 1;
+          }
+        } else {
+          const newId = 'table_' + Date.now();
+          DashboardState.present.items.push({
+            id: newId,
+            type: 'table',
+            name: name,
+            dataSourceKey: sourceKey,
+            queryMode: queryMode,
+            columns: rawCols.length > 0 ? rawCols : DataStore.getColumns(sourceKey).slice(0, 8),
+            groupByCols: groupByCols.length > 0 ? groupByCols : [DataStore.getColumns(sourceKey)[0] || 'Nhóm'],
+            metrics: metrics.length > 0 ? metrics : [{ col: DataStore.getColumns(sourceKey)[1] || 'Doanh Thu', agg: 'sum', label: `Tổng ${DataStore.getColumns(sourceKey)[1] || 'Doanh Thu'}` }],
+            showRowNumber: showRowNumber,
+            showTotals: showTotals,
+            showCellBars: showCellBars,
+            showSearch: showSearch,
+            showExport: showExport,
+            pageSize: pageSize,
+            density: density,
+            rowLimit: rowLimit,
+            hideHeader: hideHeader,
+            tabId: DashboardState.present.activeTabId,
+            pos: getNextAvailablePosition(780, 420)
           });
           DashboardState.selectedItemId = newId;
         }
@@ -4210,7 +6443,7 @@ ${expectedOutput}
       try {
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list));
         if (window.JsonStorage) window.JsonStorage.set(this.STORAGE_KEY, list);
-      } catch (e) {}
+      } catch (e) { }
       this.renderList();
       showToast('Đã xóa bản lưu.', 'info');
     },
@@ -4292,6 +6525,8 @@ ${expectedOutput}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,400&family=Roboto:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 
   <!-- Fallback to local styles if opened inside project directory -->
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/dashboard-builder.css">
   <link rel="stylesheet" href="../../css/theme.css">
   <link rel="stylesheet" href="../../css/dashboard-builder.css">
 
@@ -4656,6 +6891,52 @@ ${expectedOutput}
       max-width: 100%; max-height: 100%; display: block;
     }
 
+    /* SUPERSET TABLE COMPONENT */
+    .db-item-box.is-type-table .db-item-body { padding: 0 !important; display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--db-card-bg); }
+    .db-superset-table-container { display: flex; flex-direction: column; height: 100%; width: 100%; overflow: hidden; font-family: inherit; color: var(--db-text-main); background: transparent; }
+    .dst-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--db-card-border); background: rgba(248, 250, 252, 0.7); flex-shrink: 0; gap: 8px; }
+    [data-theme="dark"] .dst-toolbar { background: rgba(30, 41, 59, 0.4); }
+    .dst-toolbar-left { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .dst-search-box { position: relative; display: flex; align-items: center; max-width: 220px; flex: 1; }
+    .dst-search-icon { position: absolute; left: 8px; font-size: 11px; pointer-events: none; opacity: 0.6; }
+    .dst-search-input { width: 100%; height: 28px; padding: 0 24px 0 26px; font-size: 11.5px; border: 1px solid var(--db-card-border); border-radius: 6px; background: var(--db-card-bg); color: var(--db-text-main); outline: none; }
+    .dst-search-clear { position: absolute; right: 6px; background: none; border: none; font-size: 11px; color: var(--db-text-sub); cursor: pointer; padding: 2px 4px; }
+    .dst-count-badge { font-size: 11px; font-weight: 600; color: var(--db-text-sub); background: rgba(0, 0, 0, 0.04); padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
+    .dst-export-btn { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; font-size: 11.5px; font-weight: 600; color: var(--db-accent); background: rgba(2, 132, 199, 0.08); border: 1px solid rgba(2, 132, 199, 0.25); border-radius: 6px; cursor: pointer; white-space: nowrap; }
+    .dst-export-btn:hover { background: var(--db-accent); color: #fff; }
+    .dst-scroll-area { flex: 1; overflow: auto; position: relative; min-height: 0; }
+    .db-superset-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; text-align: left; }
+    .db-superset-table thead th { position: sticky; top: 0; z-index: 5; background: #f8fafc; color: #475569; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; padding: 8px 12px; border-bottom: 2px solid var(--db-card-border); user-select: none; white-space: nowrap; cursor: pointer; }
+    [data-theme="dark"] .db-superset-table thead th { background: #1e293b; color: #cbd5e1; }
+    .db-superset-table thead th:hover { background: #f1f5f9; color: var(--db-accent); }
+    .db-superset-table thead th.sorted { color: var(--db-accent); border-bottom-color: var(--db-accent); }
+    .dst-sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.5; }
+    .db-superset-table thead th.sorted .dst-sort-icon { opacity: 1; }
+    .dst-th-stt, .dst-td-stt { width: 44px; min-width: 44px; max-width: 44px; text-align: center !important; color: var(--db-text-sub); font-size: 11px; }
+    .db-superset-table tbody tr:nth-child(even) { background: rgba(248, 250, 252, 0.45); }
+    [data-theme="dark"] .db-superset-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+    .db-superset-table tbody tr:hover { background: rgba(2, 132, 199, 0.06) !important; }
+    .db-superset-table td { padding: 7px 12px; border-bottom: 1px solid var(--db-card-border); white-space: nowrap; position: relative; vertical-align: middle; }
+    .density-compact .db-superset-table td { padding: 4px 8px; font-size: 11px; }
+    .density-compact .db-superset-table thead th { padding: 5px 8px; font-size: 10px; }
+    .density-comfortable .db-superset-table td { padding: 11px 14px; font-size: 13px; }
+    .density-comfortable .db-superset-table thead th { padding: 11px 14px; font-size: 12px; }
+    .align-left { text-align: left; } .align-right { text-align: right; } .align-center { text-align: center; }
+    .dst-cell-bar { position: absolute; top: 3px; bottom: 3px; right: 0; background: rgba(2, 132, 199, 0.14); border-radius: 3px; pointer-events: none; z-index: 0; }
+    [data-theme="dark"] .dst-cell-bar { background: rgba(56, 189, 248, 0.2); }
+    .dst-cell-value { position: relative; z-index: 1; }
+    .db-superset-table tfoot tr { position: sticky; bottom: 0; z-index: 4; background: #f1f5f9; font-weight: 700; border-top: 2px solid var(--db-card-border); }
+    [data-theme="dark"] .db-superset-table tfoot tr { background: #1e293b; }
+    .db-superset-table tfoot td { padding: 8px 12px; border-top: 2px solid var(--db-card-border); color: var(--db-text-main); }
+    .dst-total-label { font-weight: 800; color: var(--db-accent); text-transform: uppercase; font-size: 11px; }
+    .dst-pagination { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; border-top: 1px solid var(--db-card-border); background: rgba(248, 250, 252, 0.7); flex-shrink: 0; font-size: 11px; color: var(--db-text-sub); }
+    [data-theme="dark"] .dst-pagination { background: rgba(30, 41, 59, 0.4); }
+    .dst-page-btns { display: flex; align-items: center; gap: 4px; }
+    .dst-pbtn { height: 24px; padding: 0 8px; font-size: 11px; font-weight: 600; border: 1px solid var(--db-card-border); border-radius: 4px; background: var(--db-card-bg); color: var(--db-text-main); cursor: pointer; }
+    .dst-pbtn:hover:not(:disabled) { background: var(--db-accent); color: #fff; border-color: var(--db-accent); }
+    .dst-pbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .db-table-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--db-text-sub); font-size: 12px; font-style: italic; padding: 20px; text-align: center; }
+
     /* 5. BI PLATFORM FILTERS (ALL TYPES) */
     .db-filter-container {
       display: flex; flex-direction: column; gap: 6px; justify-content: center;
@@ -4979,7 +7260,6 @@ ${expectedOutput}
   <header class="db-header">
     <div class="db-header-left">
       <div class="db-title-container">
-        <span style="font-size:22px;">📊</span>
         <h1 class="db-title-heading" id="dashboardTitleHeading">${title}</h1>
       </div>
     </div>
@@ -5387,6 +7667,27 @@ ${expectedOutput}
     }
 
     function getData(sourceKey, fallbackCol = null) {
+      if (sourceKey === '__ALL_FILES__') {
+        const combined = [];
+        for (const f in FILES) {
+          for (const s in FILES[f]) {
+            const rows = FILES[f][s] || [];
+            for (let i = 0; i < rows.length; i++) combined.push(rows[i]);
+          }
+        }
+        return combined;
+      }
+      if (String(sourceKey).endsWith('::__ALL_SHEETS__')) {
+        const fn = String(sourceKey).replace('::__ALL_SHEETS__', '');
+        if (FILES[fn]) {
+          const combined = [];
+          for (const s in FILES[fn]) {
+            const rows = FILES[fn][s] || [];
+            for (let i = 0; i < rows.length; i++) combined.push(rows[i]);
+          }
+          return combined;
+        }
+      }
       if (!sourceKey && fallbackCol) {
         for (const f in FILES) {
           for (const s in FILES[f]) {
@@ -5424,12 +7725,77 @@ ${expectedOutput}
       return [];
     }
 
-    function getFilteredData(sourceKey, excludeCols = [], targetTabId = null) {
+    function getApplicableFilters(targetTabId = null, targetChartId = null, excludeCols = []) {
+      const tabId = targetTabId || activeTabId || 'default';
+      const applicableFilters = {};
+
+      const filterItems = (CONFIG.items || []).filter(i => i && i.type === 'filter');
+
+      if (filterItems.length > 0) {
+        filterItems.forEach(filterItem => {
+          const col = filterItem.filterColumn;
+          if (!col || excludeCols.includes(col)) return;
+
+          // 1. Kiểm tra phạm vi Tab (Target Tab)
+          const homeTabId = filterItem.tabId || 'default';
+          const targetTab = filterItem.targetTab || 'current';
+          let matchesTab = false;
+
+          if (targetTab === 'all') {
+            matchesTab = true;
+          } else if (targetTab === 'current' || !targetTab) {
+            matchesTab = (tabId === homeTabId);
+          } else {
+            matchesTab = (tabId === targetTab);
+          }
+
+          if (!matchesTab) return;
+
+          // 2. Kiểm tra phạm vi Biểu đồ (Target Charts)
+          if (targetChartId) {
+            const targetScope = filterItem.targetScope || 'all';
+            const targetChartIds = Array.isArray(filterItem.targetChartIds) ? filterItem.targetChartIds : [];
+
+            if (targetScope === 'custom' && targetChartIds.length > 0) {
+              if (!targetChartIds.includes(targetChartId)) {
+                // Biểu đồ này không nằm trong danh sách áp dụng của bộ lọc -> BỎ QUA
+                return;
+              }
+            }
+          }
+
+          // 3. Lấy giá trị lọc hiện tại
+          let filterVal = filterItem.currentFilterValue;
+          if (filterVal === undefined) {
+            const tabFiltersMap = tabFilters[homeTabId] || {};
+            filterVal = tabFiltersMap[col] !== undefined ? tabFiltersMap[col] : (homeTabId === activeTabId ? activeFilters[col] : undefined);
+          }
+
+          if (filterVal !== undefined && filterVal !== null) {
+            applicableFilters[col] = filterVal;
+          }
+        });
+      }
+
+      // Fallback: nếu chưa có bộ lọc nào từ filterItems nhưng có tabFilters/activeFilters
+      if (Object.keys(applicableFilters).length === 0 && !targetChartId) {
+        const fallbackFilters = tabFilters[tabId] || (tabId === activeTabId ? activeFilters : {}) || {};
+        for (const k in fallbackFilters) {
+          if (!excludeCols.includes(k) && fallbackFilters[k] !== undefined && fallbackFilters[k] !== null) {
+            applicableFilters[k] = fallbackFilters[k];
+          }
+        }
+      }
+
+      return applicableFilters;
+    }
+
+    function getFilteredData(sourceKey, excludeCols = [], targetTabId = null, targetChartId = null) {
       let rows = getData(sourceKey);
       if (!rows || rows.length === 0) return [];
       const tabId = targetTabId || activeTabId || 'default';
-      const filters = tabId === activeTabId ? activeFilters : (tabFilters[tabId] || {});
-      const filterKeys = Object.keys(filters).filter(k => !excludeCols.includes(k));
+      const filters = getApplicableFilters(tabId, targetChartId, excludeCols);
+      const filterKeys = Object.keys(filters);
       if (filterKeys.length === 0) return rows;
 
       return rows.filter(row => {
@@ -5583,13 +7949,13 @@ ${expectedOutput}
       });
     }
 
-    function getFilteredFilesObject(targetTabId = null) {
+    function getFilteredFilesObject(targetTabId = null, targetChartId = null) {
       const filtered = {};
       const tabId = targetTabId || activeTabId || 'default';
       for (const f in FILES) {
         filtered[f] = {};
         for (const s in FILES[f]) {
-          filtered[f][s] = getFilteredData(f + '::' + s, [], tabId);
+          filtered[f][s] = getFilteredData(f + '::' + s, [], tabId, targetChartId);
         }
       }
       return filtered;
@@ -5660,11 +8026,12 @@ ${expectedOutput}
       }
       try {
         const itemTabId = context.tabId || activeTabId || 'default';
+        const chartId = context.chartId || null;
         const allFiles = FILES;
-        const filteredFiles = getFilteredFilesObject(itemTabId);
+        const filteredFiles = getFilteredFilesObject(itemTabId, chartId);
         let defaultData = optionalData;
         if (defaultData === null || defaultData === undefined) {
-          defaultData = getFilteredData(null, [], itemTabId);
+          defaultData = getFilteredData(null, [], itemTabId, chartId);
         }
         const getSheet = (sheetName, fileName = null) => {
           if (fileName && filteredFiles[fileName] && filteredFiles[fileName][sheetName]) {
@@ -5919,8 +8286,387 @@ ${expectedOutput}
         canvas.appendChild(el);
         renderItemContent(item);
       });
+    }
 
-      updateCanvasTransform();
+    function exportSupersetTable(item, rows, cols) {
+      const rawName = (item.name || 'bang_du_lieu').replace(/[^a-zA-Z0-9_À-ỹ]/g, '_');
+      const fileName = rawName + '_' + new Date().toISOString().slice(0, 10);
+
+      const exportData = rows.map(r => {
+        const obj = {};
+        cols.forEach(c => {
+          obj[c] = r[c] !== undefined && r[c] !== null ? r[c] : '';
+        });
+        return obj;
+      });
+
+      if (typeof XLSX !== 'undefined' && XLSX.utils && XLSX.writeFile) {
+        try {
+          const ws = XLSX.utils.json_to_sheet(exportData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Data");
+          XLSX.writeFile(wb, fileName + '.xlsx');
+          return;
+        } catch (err) {
+          console.warn('XLSX export fallback to CSV:', err);
+        }
+      }
+
+      let csv = '\uFEFF';
+      csv += cols.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',') + '\\r\\n';
+      exportData.forEach(r => {
+        csv += cols.map(c => '"' + String(r[c] != null ? r[c] : '').replace(/"/g, '""') + '"').join(',') + '\\r\\n';
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function renderSupersetTable(item, containerEl) {
+      if (!containerEl) return;
+      containerEl.innerHTML = '';
+
+      const tabId = item.tabId || activeTabId || 'default';
+      const rawData = typeof getFilteredData === 'function' ? getFilteredData(item.dataSourceKey, [], tabId, item.id) : [];
+
+      if (!rawData || rawData.length === 0) {
+        containerEl.innerHTML = '<div class="db-table-empty"><div style="font-size:24px;margin-bottom:6px;">📋</div><div>Không có dữ liệu hiển thị</div></div>';
+        return;
+      }
+
+      const queryMode = item.queryMode || 'raw';
+      let displayCols = [];
+      let finalRows = [];
+
+      if (queryMode === 'aggregate') {
+        const groupCols = Array.isArray(item.groupByCols) && item.groupByCols.length > 0
+          ? item.groupByCols
+          : [Object.keys(rawData[0] || {})[0] || 'Nhóm'];
+
+        const metrics = Array.isArray(item.metrics) && item.metrics.length > 0
+          ? item.metrics
+          : [{ col: Object.keys(rawData[0] || {})[1] || 'Doanh Thu', agg: 'sum', label: 'Tổng ' + (Object.keys(rawData[0] || {})[1] || 'Doanh Thu') }];
+
+        displayCols = [...groupCols];
+        metrics.forEach(m => {
+          const mLabel = m.label || (m.agg.toUpperCase() + '(' + m.col + ')');
+          displayCols.push(mLabel);
+        });
+
+        const groupsMap = new Map();
+        for (let i = 0; i < rawData.length; i++) {
+          const row = rawData[i];
+          const gKey = groupCols.map(c => String(row[c] != null ? row[c] : '')).join('___:::___');
+          let g = groupsMap.get(gKey);
+          if (!g) {
+            g = { _keys: groupCols.map(c => row[c]), _rows: [] };
+            groupsMap.set(gKey, g);
+          }
+          g._rows.push(row);
+        }
+
+        for (const [_, g] of groupsMap.entries()) {
+          const outRow = {};
+          groupCols.forEach((c, idx) => {
+            outRow[c] = g._keys[idx];
+          });
+          metrics.forEach(m => {
+            const mLabel = m.label || (m.agg.toUpperCase() + '(' + m.col + ')');
+            const numVals = g._rows.map(r => Number(r[m.col])).filter(n => !isNaN(n));
+            let val = 0;
+            if (m.agg === 'sum') {
+              val = numVals.reduce((a, b) => a + b, 0);
+            } else if (m.agg === 'avg') {
+              val = numVals.length > 0 ? (numVals.reduce((a, b) => a + b, 0) / numVals.length) : 0;
+            } else if (m.agg === 'count') {
+              val = g._rows.length;
+            } else if (m.agg === 'min') {
+              val = numVals.length > 0 ? Math.min(...numVals) : 0;
+            } else if (m.agg === 'max') {
+              val = numVals.length > 0 ? Math.max(...numVals) : 0;
+            } else if (m.agg === 'count_distinct') {
+              val = new Set(g._rows.map(r => r[m.col])).size;
+            }
+            outRow[mLabel] = val;
+          });
+          finalRows.push(outRow);
+        }
+      } else {
+        displayCols = Array.isArray(item.columns) && item.columns.length > 0
+          ? [...item.columns]
+          : Object.keys(rawData[0] || {});
+
+        const limit = Number(item.rowLimit) || 0;
+        finalRows = limit > 0 ? rawData.slice(0, limit) : [...rawData];
+      }
+
+      const colMeta = {};
+      displayCols.forEach(col => {
+        let isNum = false;
+        let maxVal = 0;
+        let sumVal = 0;
+        let hasValidNum = false;
+
+        for (let i = 0; i < finalRows.length; i++) {
+          const v = finalRows[i][col];
+          if (v !== null && v !== undefined && v !== '') {
+            const n = Number(v);
+            if (!isNaN(n)) {
+              hasValidNum = true;
+              if (Math.abs(n) > maxVal) maxVal = Math.abs(n);
+              sumVal += n;
+            }
+          }
+        }
+        isNum = hasValidNum && finalRows.every(r => {
+          const v = r[col];
+          return v === null || v === undefined || v === '' || !isNaN(Number(v));
+        });
+
+        colMeta[col] = { isNum, maxVal, sumVal };
+      });
+
+      if (item._searchText) {
+        const q = String(item._searchText).toLowerCase().trim();
+        finalRows = finalRows.filter(row => {
+          return displayCols.some(c => String(row[c] != null ? row[c] : '').toLowerCase().includes(q));
+        });
+      }
+
+      if (item._sortCol && displayCols.includes(item._sortCol)) {
+        const sCol = item._sortCol;
+        const sDir = item._sortDir === 'desc' ? -1 : 1;
+        const isNum = colMeta[sCol] && colMeta[sCol].isNum;
+
+        finalRows.sort((a, b) => {
+          const vA = a[sCol];
+          const vB = b[sCol];
+          if (isNum) {
+            const nA = Number(vA) || 0;
+            const nB = Number(vB) || 0;
+            return (nA - nB) * sDir;
+          }
+          return String(vA != null ? vA : '').localeCompare(String(vB != null ? vB : ''), 'vi') * sDir;
+        });
+      }
+
+      const pageSize = item.pageSize !== undefined ? Number(item.pageSize) : 20;
+      const totalCount = finalRows.length;
+      let totalPages = 1;
+      let curPage = item._page || 1;
+      let pagedRows = finalRows;
+
+      if (pageSize > 0) {
+        totalPages = Math.ceil(totalCount / pageSize) || 1;
+        if (curPage > totalPages) curPage = totalPages;
+        if (curPage < 1) curPage = 1;
+        item._page = curPage;
+        const startIdx = (curPage - 1) * pageSize;
+        pagedRows = finalRows.slice(startIdx, startIdx + pageSize);
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'db-superset-table-container density-' + (item.density || 'normal');
+
+      const showToolbar = item.showSearch !== false || item.showExport !== false;
+      if (showToolbar) {
+        const toolbar = document.createElement('div');
+        toolbar.className = 'dst-toolbar';
+
+        let searchHtml = '';
+        if (item.showSearch !== false) {
+          searchHtml = '<div class="dst-search-box">' +
+            '<span class="dst-search-icon">🔍</span>' +
+            '<input type="text" class="dst-search-input" placeholder="Tìm kiếm nhanh..." value="' + escapeHtml(item._searchText || '') + '" />' +
+            (item._searchText ? '<button class="dst-search-clear" title="Xóa tìm kiếm">✕</button>' : '') +
+          '</div>';
+        }
+
+        toolbar.innerHTML = '<div class="dst-toolbar-left">' +
+            searchHtml +
+            '<span class="dst-count-badge">' + totalCount + ' dòng</span>' +
+          '</div>' +
+          '<div class="dst-toolbar-right">' +
+            (item.showExport !== false ? '<button class="dst-export-btn" title="Xuất dữ liệu bảng ra file Excel/CSV">📥 Xuất Tệp</button>' : '') +
+          '</div>';
+
+        const sInput = toolbar.querySelector('.dst-search-input');
+        sInput && sInput.addEventListener('input', (e) => {
+          item._searchText = e.target.value;
+          item._page = 1;
+          renderSupersetTable(item, containerEl);
+        });
+
+        const clearBtn = toolbar.querySelector('.dst-search-clear');
+        clearBtn && clearBtn.addEventListener('click', () => {
+          item._searchText = '';
+          item._page = 1;
+          renderSupersetTable(item, containerEl);
+        });
+
+        const expBtn = toolbar.querySelector('.dst-export-btn');
+        expBtn && expBtn.addEventListener('click', () => {
+          exportSupersetTable(item, finalRows, displayCols);
+        });
+
+        wrapper.appendChild(toolbar);
+      }
+
+      const scrollArea = document.createElement('div');
+      scrollArea.className = 'dst-scroll-area';
+
+      const table = document.createElement('table');
+      table.className = 'db-superset-table';
+
+      const thead = document.createElement('thead');
+      let thsHtml = '';
+      if (item.showRowNumber !== false) {
+        thsHtml += '<th class="dst-th-stt">STT</th>';
+      }
+      displayCols.forEach(col => {
+        const isSorted = item._sortCol === col;
+        const arrow = isSorted ? (item._sortDir === 'desc' ? '▼' : '▲') : '↕';
+        const align = (colMeta[col] && colMeta[col].isNum) ? 'align-right' : 'align-left';
+        thsHtml += '<th class="' + align + ' ' + (isSorted ? 'sorted' : '') + '" data-col="' + escapeHtml(col) + '" title="Nhấn để sắp xếp theo cột ' + escapeHtml(col) + '">' +
+            '<span>' + escapeHtml(col) + '</span>' +
+            '<span class="dst-sort-icon">' + arrow + '</span>' +
+          '</th>';
+      });
+      thead.innerHTML = '<tr>' + thsHtml + '</tr>';
+
+      thead.querySelectorAll('th[data-col]').forEach(th => {
+        th.addEventListener('click', () => {
+          const col = th.dataset.col;
+          if (item._sortCol === col) {
+            item._sortDir = item._sortDir === 'desc' ? 'asc' : 'desc';
+          } else {
+            item._sortCol = col;
+            item._sortDir = 'desc';
+          }
+          renderSupersetTable(item, containerEl);
+        });
+      });
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      let rowsHtml = '';
+      pagedRows.forEach((row, rIdx) => {
+        const stt = pageSize > 0 ? ((curPage - 1) * pageSize + rIdx + 1) : (rIdx + 1);
+        let tdsHtml = '';
+        if (item.showRowNumber !== false) {
+          tdsHtml += '<td class="dst-td-stt">' + stt + '</td>';
+        }
+
+        displayCols.forEach(col => {
+          const val = row[col];
+          const isNum = colMeta[col] && colMeta[col].isNum;
+          let cellFormatted = val !== undefined && val !== null ? String(val) : '';
+          let barHtml = '';
+
+          if (isNum && val !== '' && val !== null && val !== undefined) {
+            const num = Number(val);
+            if (!isNaN(num)) {
+              cellFormatted = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(num);
+              if (item.showCellBars !== false && colMeta[col].maxVal > 0) {
+                const pct = Math.max(0, Math.min(100, Math.round((Math.abs(num) / colMeta[col].maxVal) * 100)));
+                barHtml = '<div class="dst-cell-bar" style="width:' + pct + '%;"></div>';
+              }
+            }
+          }
+
+          const align = isNum ? 'align-right' : 'align-left';
+          tdsHtml += '<td class="' + align + '">' +
+              barHtml +
+              '<span class="dst-cell-value">' + escapeHtml(cellFormatted) + '</span>' +
+            '</td>';
+        });
+
+        rowsHtml += '<tr>' + tdsHtml + '</tr>';
+      });
+
+      if (pagedRows.length === 0) {
+        rowsHtml = '<tr><td colspan="' + (displayCols.length + (item.showRowNumber !== false ? 1 : 0)) + '" style="text-align:center;padding:24px;color:var(--db-text-sub);font-style:italic;">Không tìm thấy kết quả phù hợp với từ khóa "' + escapeHtml(item._searchText || '') + '"</td></tr>';
+      }
+      tbody.innerHTML = rowsHtml;
+      table.appendChild(tbody);
+
+      if (item.showTotals !== false && finalRows.length > 0) {
+        const tfoot = document.createElement('tfoot');
+        let footTds = '';
+        if (item.showRowNumber !== false) {
+          footTds += '<td class="dst-td-stt">∑</td>';
+        }
+
+        displayCols.forEach((col, idx) => {
+          const isNum = colMeta[col] && colMeta[col].isNum;
+          if (idx === 0 && !isNum) {
+            footTds += '<td class="dst-total-label">Tổng cộng</td>';
+          } else if (isNum) {
+            const sum = finalRows.reduce((acc, r) => acc + (Number(r[col]) || 0), 0);
+            const formatted = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(sum);
+            footTds += '<td class="align-right dst-total-val">' + formatted + '</td>';
+          } else {
+            footTds += '<td></td>';
+          }
+        });
+
+        tfoot.innerHTML = '<tr>' + footTds + '</tr>';
+        table.appendChild(tfoot);
+      }
+
+      scrollArea.appendChild(table);
+      wrapper.appendChild(scrollArea);
+
+      if (pageSize > 0 && totalPages > 1) {
+        const pagEl = document.createElement('div');
+        pagEl.className = 'dst-pagination';
+        const startNum = (curPage - 1) * pageSize + 1;
+        const endNum = Math.min(curPage * pageSize, totalCount);
+
+        pagEl.innerHTML = '<span class="dst-page-info">Trang <strong>' + curPage + '</strong> / ' + totalPages + ' (Dòng ' + startNum + ' - ' + endNum + ' của ' + totalCount + ')</span>' +
+          '<div class="dst-page-btns">' +
+            '<button class="dst-pbtn dst-btn-first" ' + (curPage <= 1 ? 'disabled' : '') + ' title="Trang đầu">⏮</button>' +
+            '<button class="dst-pbtn dst-btn-prev" ' + (curPage <= 1 ? 'disabled' : '') + ' title="Trang trước">◀ Trước</button>' +
+            '<span style="font-weight:700;padding:0 4px;font-size:11px;">' + curPage + '</span>' +
+            '<button class="dst-pbtn dst-btn-next" ' + (curPage >= totalPages ? 'disabled' : '') + ' title="Trang sau">Sau ▶</button>' +
+            '<button class="dst-pbtn dst-btn-last" ' + (curPage >= totalPages ? 'disabled' : '') + ' title="Trang cuối">⏭</button>' +
+          '</div>';
+
+        const btnFirst = pagEl.querySelector('.dst-btn-first');
+        btnFirst && btnFirst.addEventListener('click', () => {
+          item._page = 1;
+          renderSupersetTable(item, containerEl);
+        });
+        const btnPrev = pagEl.querySelector('.dst-btn-prev');
+        btnPrev && btnPrev.addEventListener('click', () => {
+          if (curPage > 1) {
+            item._page = curPage - 1;
+            renderSupersetTable(item, containerEl);
+          }
+        });
+        const btnNext = pagEl.querySelector('.dst-btn-next');
+        btnNext && btnNext.addEventListener('click', () => {
+          if (curPage < totalPages) {
+            item._page = curPage + 1;
+            renderSupersetTable(item, containerEl);
+          }
+        });
+        const btnLast = pagEl.querySelector('.dst-btn-last');
+        btnLast && btnLast.addEventListener('click', () => {
+          item._page = totalPages;
+          renderSupersetTable(item, containerEl);
+        });
+
+        wrapper.appendChild(pagEl);
+      }
+
+      containerEl.appendChild(wrapper);
     }
 
     function renderItemContent(item) {
@@ -5934,21 +8680,30 @@ ${expectedOutput}
         chartDiv.id = 'chart_el_' + item.id;
         body.appendChild(chartDiv);
 
-        setTimeout(() => {
+        const initChart = (retries = 0) => {
+          if (typeof echarts === 'undefined') {
+            if (retries < 40) {
+              setTimeout(() => initChart(retries + 1), 50);
+              return;
+            }
+            chartDiv.innerHTML = '<div class="db-chart-error-banner">⚠️ Đang tải hoặc không thể kết nối thư viện ECharts. Vui lòng kiểm tra lại mạng.</div>';
+            return;
+          }
           let chart = echarts.getInstanceByDom(chartDiv);
           if (chart) chart.dispose();
           chart = echarts.init(chartDiv, null);
 
           const itemTabId = item.tabId || activeTabId || 'default';
-          const data = getFilteredData(item.dataSourceKey, [], itemTabId);
-          const { option, error } = evaluateEChartsCode(item.code, data, { tabId: itemTabId }, chart);
+          const data = getFilteredData(item.dataSourceKey, [], itemTabId, item.id);
+          const { option, error } = evaluateEChartsCode(item.code, data, { tabId: itemTabId, chartId: item.id }, chart);
 
           if (error) {
             chartDiv.innerHTML = '<div class="db-chart-error-banner">⚠️ Lỗi render ECharts:<br/>' + escapeHtml(error) + '</div>';
           } else if (option && Object.keys(option).length > 0) {
             chart.setOption(option, true);
           }
-        }, 30);
+        };
+        setTimeout(initChart, 30);
       } else if (item.type === 'shape') {
         const sType = item.shapeType || 'rectangle';
         const bg = item.bgColor || '#ffffff';
@@ -6004,7 +8759,7 @@ ${expectedOutput}
         body.innerHTML = '<div style="height:100%;width:100%;display:flex;align-items:center;padding:4px;overflow:hidden;"><h2 style="margin:0;width:100%;font-family:' + fFamily + ';font-size:' + fSize + ';font-weight:' + fWeight + ';font-style:' + fStyle + ';text-decoration:' + tDeco + ';color:' + tColor + ';text-align:' + tAlign + ';word-break:break-word;line-height:1.3;">' + escapeHtml(textVal) + '</h2></div>';
       } else if (item.type === 'kpi') {
         const itemTabId = item.tabId || activeTabId || 'default';
-        const data = getFilteredData(item.dataSourceKey, [], itemTabId);
+        const data = getFilteredData(item.dataSourceKey, [], itemTabId, item.id);
         const numVals = data.map(r => Number(r[item.metricColumn])).filter(n => !isNaN(n));
         let sum = 0;
         if (item.aggregation === 'avg') {
@@ -6046,6 +8801,8 @@ ${expectedOutput}
         const opacity = item.opacity !== undefined ? (item.opacity / 100) : 1;
 
         body.innerHTML = '<div class="db-frame-container" style="background:' + bg + ';border:' + border + ';border-radius:' + radius + ';box-shadow:' + shadow + ';opacity:' + opacity + ';padding:8px;font-size:12px;color:var(--db-text-sub);font-style:italic;">[Khung phân vùng: ' + escapeHtml(item.name) + ']</div>';
+      } else if (item.type === 'table') {
+        renderSupersetTable(item, body);
       } else if (item.type === 'image') {
         body.innerHTML = '<div class="db-image-widget"><img src="' + (item.imageUrl || '') + '" alt="' + escapeHtml(item.name || 'Ảnh') + '" style="border-radius:' + (item.borderRadius || 6) + 'px;object-fit:' + (item.fit || 'contain') + ';" /></div>';
       } else if (item.type === 'filter') {
@@ -6086,6 +8843,7 @@ ${expectedOutput}
         const filterState = currentTabFilters[col];
 
         const setTabFilterState = (valObj, keepDropdownOpen = false) => {
+          item.currentFilterValue = valObj;
           if (!tabFilters[itemTabId]) tabFilters[itemTabId] = {};
           if (valObj === undefined || valObj === null || valObj === '' || valObj === 'all') {
             delete tabFilters[itemTabId][col];
@@ -6221,6 +8979,13 @@ ${expectedOutput}
         let parentBadgeHtml = '';
         if (parentItem) {
           parentBadgeHtml = '<span class="db-filter-parent-badge" title="Bộ lọc phụ thuộc vào: ' + escapeHtml(parentItem.name || parentItem.filterColumn) + '">↳ Con: ' + escapeHtml(parentItem.name || parentItem.filterColumn) + '</span>';
+        }
+        if (item.targetTab && item.targetTab !== 'current') {
+          const targetTabName = item.targetTab === 'all' ? 'Mọi Tab' : ((CONFIG.tabs || []).find(t => t.id === item.targetTab)?.name || item.targetTab);
+          parentBadgeHtml += ' <span class="db-filter-parent-badge" style="background:#e0e7ff;color:#3730a3;border-color:#c7d2fe;" title="Bộ lọc trỏ vào tab: ' + escapeHtml(targetTabName) + '">📑 ' + escapeHtml(targetTabName) + '</span>';
+        }
+        if (item.targetScope === 'custom' && Array.isArray(item.targetChartIds) && item.targetChartIds.length > 0) {
+          parentBadgeHtml += ' <span class="db-filter-parent-badge" style="background:#fef3c7;color:#92400e;border-color:#fde68a;" title="Chỉ áp dụng cho ' + item.targetChartIds.length + ' biểu đồ cụ thể">🎯 ' + item.targetChartIds.length + ' charts</span>';
         }
 
         let controlsHtml = '';
@@ -6517,10 +9282,12 @@ ${expectedOutput}
         canvas.style.transformOrigin = 'top center';
         canvas.style.marginBottom = '0px';
       }
-      document.querySelectorAll('.db-chart-canvas').forEach(el => {
-        const c = echarts.getInstanceByDom(el);
-        if (c) c.resize();
-      });
+      if (typeof echarts !== 'undefined' && echarts.getInstanceByDom) {
+        document.querySelectorAll('.db-chart-canvas').forEach(el => {
+          const c = echarts.getInstanceByDom(el);
+          if (c) c.resize();
+        });
+      }
     }
 
     // Dynamic Excel File Upload Handler
@@ -6650,7 +9417,13 @@ ${expectedOutput}
     // Initial render
     renderAllTabs();
     renderCanvas();
+    updateCanvasTransform();
     updateTopFilterBarStickyPosition();
+
+    window.addEventListener('load', () => {
+      updateCanvasTransform();
+      updateTopFilterBarStickyPosition();
+    });
   <\/script>
 </body>
 </html>`;
@@ -6718,7 +9491,7 @@ ${expectedOutput}
       if (typeof localStorage !== 'undefined' && DashboardState.present.theme.canvasBg) {
         localStorage.setItem('mb_dashboard_canvas_bg', DashboardState.present.theme.canvasBg);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // 3. ĐẢM BẢO CẤU HÌNH THANH TAB (VỊ TRÍ 4 HƯỚNG, STYLES, MÀU SẮC, ĐỘ RỘNG...) ĐƯỢC LƯU TRỌN VẸN
     if (typeof TabBarManager !== 'undefined' && TabBarManager.getConfig) {
@@ -6787,7 +9560,8 @@ ${expectedOutput}
   }
 
   function exportStandaloneHtml() {
-    const htmlFileName = 'index.html';
+    const cleanTitle = (DashboardState.present.title || 'Dashboard').trim().replace(/[/\\?%*:|"<>]/g, '_');
+    const htmlFileName = (cleanTitle || 'Dashboard') + '.html';
     const htmlContent = generateStandaloneDashboardHTML();
 
     downloadBlob(new Blob([htmlContent], { type: 'text/html;charset=utf-8' }), htmlFileName);
@@ -6897,9 +9671,9 @@ ${expectedOutput}
           const tx = db.transaction('active_workspace', 'readwrite');
           const store = tx.objectStore('active_workspace');
           store.put({ id: 'current_workspace', dirHandle, folderName: folderName || dirHandle.name, timestamp: Date.now() });
-        } catch (_) {}
+        } catch (_) { }
       };
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function getActiveWorkspaceHandle() {
@@ -6948,9 +9722,9 @@ ${expectedOutput}
           if (!db.objectStoreNames.contains('active_workspace')) return;
           const tx = db.transaction('active_workspace', 'readwrite');
           tx.objectStore('active_workspace').delete('current_workspace');
-        } catch (_) {}
+        } catch (_) { }
       };
-    } catch (_) {}
+    } catch (_) { }
   }
 
   let isAutoSavingToDisk = false;
@@ -7070,12 +9844,12 @@ ${expectedOutput}
       const oldSlugHtml = `dashboard_${titleSlug}.html`;
       const oldSlugJson = `dashboard_${titleSlug}_config.json`;
       if (oldSlugHtml !== htmlFileName) {
-        await targetDirHandle.removeEntry(oldSlugHtml).catch(() => {});
+        await targetDirHandle.removeEntry(oldSlugHtml).catch(() => { });
       }
       if (oldSlugJson !== jsonFileName) {
-        await targetDirHandle.removeEntry(oldSlugJson).catch(() => {});
+        await targetDirHandle.removeEntry(oldSlugJson).catch(() => { });
       }
-    } catch (_) {}
+    } catch (_) { }
 
     DashboardState.isDirty = false;
     DashboardState.updateUI();
@@ -7250,8 +10024,8 @@ ${expectedOutput}
   async function parseExcelFileAsync(file) {
     const isCsv = file.name.toLowerCase().endsWith('.csv');
     const isLargeFile = file.size >= PARQUET_THRESHOLD_BYTES;
-    const sizeStr = file.size > 1048576 
-      ? (file.size / 1048576).toFixed(1) + ' MB' 
+    const sizeStr = file.size > 1048576
+      ? (file.size / 1048576).toFixed(1) + ' MB'
       : Math.max(1, Math.round(file.size / 1024)) + ' KB';
 
     if (isCsv) {
@@ -7354,13 +10128,13 @@ ${expectedOutput}
     if (!config) {
       const mCfg = htmlText.match(/const\s+CONFIG\s*=\s*(\{[\s\S]*?\})\s*;\s*(?:let|const|var)\s+FILES/);
       if (mCfg && mCfg[1]) {
-        try { config = JSON.parse(mCfg[1]); } catch (_) {}
+        try { config = JSON.parse(mCfg[1]); } catch (_) { }
       }
     }
     if (!embeddedData && config) {
       const mFiles = htmlText.match(/(?:let|const|var)\s+FILES\s*=\s*(\{[\s\S]*?\})\s*;\s*(?:let|const|var)\s+activeTabId/);
       if (mFiles && mFiles[1]) {
-        try { embeddedData = JSON.parse(mFiles[1]); } catch (_) {}
+        try { embeddedData = JSON.parse(mFiles[1]); } catch (_) { }
       }
     }
 
@@ -7603,7 +10377,7 @@ ${expectedOutput}
             configFileName = hf.name;
             break;
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     }
 
@@ -7704,7 +10478,7 @@ ${expectedOutput}
               sheetsData[sName] = rows;
             }
           });
-          const rawSizeStr = ef.data.byteLength >= 1048576 
+          const rawSizeStr = ef.data.byteLength >= 1048576
             ? (ef.data.byteLength / 1048576).toFixed(1) + ' MB'
             : Math.max(1, Math.round(ef.data.byteLength / 1024)) + ' KB';
           DataStore.files[ef.name] = {
@@ -7728,7 +10502,7 @@ ${expectedOutput}
       // 2. Tìm cấu hình từ JSON hoặc HTML
       let config = null;
       if (configFileContent) {
-        try { config = JSON.parse(configFileContent); } catch (_) {}
+        try { config = JSON.parse(configFileContent); } catch (_) { }
       }
       if (!config && htmlFileContent) {
         config = extractDashboardFromHtml(htmlFileContent);
@@ -7821,7 +10595,7 @@ ${expectedOutput}
                   filesArray.push(subFile);
                 }
               }
-            } catch (_) {}
+            } catch (_) { }
           }
         }
 
@@ -7905,8 +10679,8 @@ ${expectedOutput}
     filesArray.forEach(async (file) => {
       const isCsv = file.name.toLowerCase().endsWith('.csv');
       const isLargeFile = file.size >= PARQUET_THRESHOLD_BYTES;
-      const sizeStr = file.size > 1048576 
-        ? (file.size / 1048576).toFixed(1) + ' MB' 
+      const sizeStr = file.size > 1048576
+        ? (file.size / 1048576).toFixed(1) + ' MB'
         : Math.max(1, Math.round(file.size / 1024)) + ' KB';
 
       try {
@@ -7971,28 +10745,28 @@ ${expectedOutput}
 
       processed++;
       if (processed === filesArray.length) {
-            // Nếu đây là lần nạp file thật đầu tiên, gỡ bỏ file demo mẫu để ưu tiên dữ liệu thật
-            if (DataStore.files['Du_Lieu_Mau_Kinh_Doanh.xlsx'] && Object.keys(DataStore.files).length > 1) {
-              delete DataStore.files['Du_Lieu_Mau_Kinh_Doanh.xlsx'];
+        // Nếu đây là lần nạp file thật đầu tiên, gỡ bỏ file demo mẫu để ưu tiên dữ liệu thật
+        if (DataStore.files['Du_Lieu_Mau_Kinh_Doanh.xlsx'] && Object.keys(DataStore.files).length > 1) {
+          delete DataStore.files['Du_Lieu_Mau_Kinh_Doanh.xlsx'];
+        }
+
+        // Tự động chuyển các chart đang dùng mock data sang nguồn file mới nạp
+        if (newlyAddedFirstKey) {
+          DashboardState.present.items.forEach(item => {
+            if (!item.dataSourceKey || item.dataSourceKey.startsWith('Du_Lieu_Mau_Kinh_Doanh.xlsx')) {
+              item.dataSourceKey = newlyAddedFirstKey;
             }
+          });
+        }
 
-            // Tự động chuyển các chart đang dùng mock data sang nguồn file mới nạp
-            if (newlyAddedFirstKey) {
-              DashboardState.present.items.forEach(item => {
-                if (!item.dataSourceKey || item.dataSourceKey.startsWith('Du_Lieu_Mau_Kinh_Doanh.xlsx')) {
-                  item.dataSourceKey = newlyAddedFirstKey;
-                }
-              });
-            }
+        updateDataSourcesSummary();
+        updateExcelButtonState();
+        renderCanvas();
 
-            updateDataSourcesSummary();
-            updateExcelButtonState();
-            renderCanvas();
-
-            // Mở ngay popup quản lý nguồn dữ liệu để người dùng kiểm tra dữ liệu và xem trước các sheet
-            openExcelManagerModal();
-            showToast(`✓ Đã nạp thành công ${filesArray.length} file nguồn dữ liệu!`, 'success');
-          }
+        // Mở ngay popup quản lý nguồn dữ liệu để người dùng kiểm tra dữ liệu và xem trước các sheet
+        openExcelManagerModal();
+        showToast(`✓ Đã nạp thành công ${filesArray.length} file nguồn dữ liệu!`, 'success');
+      }
     });
   }
 
@@ -8642,7 +11416,7 @@ ${expectedOutput}
       try {
         const saved = localStorage.getItem('mb_tab_bar_config_v1');
         if (saved) return { ...this.DEFAULT_CONFIG, ...JSON.parse(saved) };
-      } catch (e) {}
+      } catch (e) { }
       return { ...this.DEFAULT_CONFIG };
     },
 
@@ -8653,7 +11427,7 @@ ${expectedOutput}
       DashboardState.updateUI();
       try {
         localStorage.setItem('mb_tab_bar_config_v1', JSON.stringify(cfg));
-      } catch (e) {}
+      } catch (e) { }
     },
 
     apply(cfg = null) {
@@ -9309,6 +12083,23 @@ ${expectedOutput}
         }
       });
 
+      // --- Table Controls ---
+      document.getElementById('fpsBtnOpenTableStudio')?.addEventListener('click', () => {
+        const item = this.getItem();
+        if (item && item.type === 'table') {
+          WidgetConfigModal.open('table', item.id);
+        }
+      });
+      document.getElementById('fpsTableSourceSelect')?.addEventListener('change', (e) => {
+        const item = this.getItem();
+        if (!item || item.type !== 'table') return;
+        DashboardState.pushSnapshot();
+        item.dataSourceKey = e.target.value;
+        item.columns = DataStore.getColumns(item.dataSourceKey).slice(0, 8);
+        renderCanvas();
+        triggerDebouncedAutoSave();
+      });
+
       // --- KPI Controls ---
       document.getElementById('fpsKpiMetricSelect')?.addEventListener('change', (e) => {
         const item = this.getItem();
@@ -9446,12 +12237,55 @@ ${expectedOutput}
         renderCanvas();
       });
 
+      document.getElementById('fpsFilterTargetTabSelect')?.addEventListener('change', (e) => {
+        const item = this.getItem();
+        if (!item || item.type !== 'filter') return;
+        DashboardState.pushSnapshot();
+        item.targetTab = e.target.value;
+        this.renderSidebarFilterChartsPicker(item);
+        renderCanvas();
+      });
+
+      document.getElementById('fpsFilterTargetScopeSelect')?.addEventListener('change', (e) => {
+        const item = this.getItem();
+        if (!item || item.type !== 'filter') return;
+        DashboardState.pushSnapshot();
+        item.targetScope = e.target.value;
+        const pickerWrap = document.getElementById('fpsFilterChartsPickerWrap');
+        if (pickerWrap) pickerWrap.style.display = item.targetScope === 'custom' ? 'block' : 'none';
+        if (item.targetScope === 'custom') {
+          this.renderSidebarFilterChartsPicker(item);
+        }
+        renderCanvas();
+      });
+
+      document.getElementById('fpsBtnFilterSelectAllCharts')?.addEventListener('click', () => {
+        const item = this.getItem();
+        if (!item || item.type !== 'filter') return;
+        const chks = document.querySelectorAll('.fps-target-chart-chk');
+        if (chks.length === 0) return;
+        const allChecked = Array.from(chks).every(c => c.checked);
+        chks.forEach(chk => { chk.checked = !allChecked; });
+        item.targetChartIds = Array.from(document.querySelectorAll('.fps-target-chart-chk:checked')).map(c => c.value);
+        DashboardState.pushSnapshot();
+        renderCanvas();
+      });
+
+      document.getElementById('fpsFilterChartsCheckboxList')?.addEventListener('change', () => {
+        const item = this.getItem();
+        if (!item || item.type !== 'filter') return;
+        item.targetChartIds = Array.from(document.querySelectorAll('.fps-target-chart-chk:checked')).map(c => c.value);
+        DashboardState.pushSnapshot();
+        renderCanvas();
+      });
+
       document.getElementById('fpsBtnOpenFilterModal')?.addEventListener('click', () => {
         const item = this.getItem();
         if (item && item.type === 'filter') {
           WidgetConfigModal.open('filter', item.id);
         }
       });
+
 
       // --- Text & Heading Controls ---
       document.getElementById('fpsTextContent')?.addEventListener('input', (e) => {
@@ -9617,18 +12451,7 @@ ${expectedOutput}
       document.getElementById('fpsBtnDuplicate')?.addEventListener('click', () => {
         const orig = this.getItem();
         if (!orig) return;
-        DashboardState.pushSnapshot();
-        const dupId = orig.type + '_' + Date.now();
-        const copy = {
-          ...JSON.parse(JSON.stringify(orig)),
-          id: dupId,
-          name: `${orig.name} (Bản sao)`,
-          pos: { ...orig.pos, x: orig.pos.x + 30, y: orig.pos.y + 30 }
-        };
-        DashboardState.present.items.push(copy);
-        renderCanvas();
-        this.open(dupId);
-        showToast('Đã nhân bản thành phần!', 'success');
+        duplicateItemById(orig.id);
       });
 
       document.getElementById('fpsBtnDelete')?.addEventListener('click', async () => {
@@ -9695,6 +12518,45 @@ ${expectedOutput}
       }
     },
 
+    renderSidebarFilterChartsPicker(item) {
+      const listEl = document.getElementById('fpsFilterChartsCheckboxList');
+      if (!listEl || !item || item.type !== 'filter') return;
+
+      const chosenTargetTab = item.targetTab || 'current';
+      const effectiveTabId = chosenTargetTab === 'current' ? (item.tabId || 'default') : chosenTargetTab;
+
+      let candidateCharts = [];
+      if (effectiveTabId === 'all') {
+        candidateCharts = (DashboardState.present?.items || []).filter(i => i.type === 'chart');
+      } else {
+        candidateCharts = (DashboardState.present?.items || []).filter(i => i.type === 'chart' && (i.tabId || 'default') === effectiveTabId);
+      }
+
+      const curTargetChartIds = Array.isArray(item.targetChartIds) ? item.targetChartIds : [];
+
+      if (candidateCharts.length === 0) {
+        listEl.innerHTML = `
+          <div style="font-size:11px;color:#94a3b8;font-style:italic;padding:6px 0;">
+            ⚠️ Không có biểu đồ nào trong Tab này.
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = candidateCharts.map(c => {
+        const chartName = c.name || `Biểu Đồ ${c.id}`;
+        const isChecked = curTargetChartIds.length === 0 || curTargetChartIds.includes(c.id);
+        const tabBadge = effectiveTabId === 'all' ? `<span style="font-size:10px;color:#64748b;background:#e2e8f0;padding:1px 5px;border-radius:4px;margin-left:auto;">Tab: ${escapeHtml(c.tabId || 'default')}</span>` : '';
+        return `
+          <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;cursor:pointer;background:#ffffff;padding:5px 8px;border-radius:5px;border:1px solid #e2e8f0;user-select:none;">
+            <input type="checkbox" value="${escapeHtml(c.id)}" class="fps-target-chart-chk" ${isChecked ? 'checked' : ''} style="accent-color:#0284c7;width:14px;height:14px;cursor:pointer;" />
+            <span style="font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;" title="${escapeHtml(chartName)}">📊 ${escapeHtml(chartName)}</span>
+            ${tabBadge}
+          </label>
+        `;
+      }).join('');
+    },
+
     syncPropertiesPanel(item) {
       this.syncUI(item);
     },
@@ -9703,6 +12565,7 @@ ${expectedOutput}
       if (!item) return;
 
       const isChart = item.type === 'chart';
+      const isTable = item.type === 'table';
       const isKpi = item.type === 'kpi';
       const isFilter = item.type === 'filter';
       const isHeading = item.type === 'heading';
@@ -9723,6 +12586,7 @@ ${expectedOutput}
 
       if (typeIcon) {
         if (isChart) typeIcon.textContent = '📊';
+        else if (isTable) typeIcon.textContent = '📋';
         else if (isKpi) typeIcon.textContent = '📈';
         else if (isFilter) typeIcon.textContent = '🔍';
         else if (isHeading) typeIcon.textContent = '🏷️';
@@ -9738,18 +12602,20 @@ ${expectedOutput}
       if (title) {
         title.textContent = item.name || (
           isChart ? 'Biểu Đồ ECharts' :
-          isKpi ? 'Chỉ Số KPI' :
-          isFilter ? 'Bộ Lọc' :
-          isHeading ? 'Tiêu Đề' :
-          isText ? 'Văn Bản' :
-          isButton ? 'Nút Bấm' :
-          isImage ? 'Hình Ảnh' :
-          isFrame ? 'Khung Phân Vùng' : 'Hình Khối'
+            isTable ? 'Bảng Dữ Liệu Superset' :
+              isKpi ? 'Chỉ Số KPI' :
+                isFilter ? 'Bộ Lọc' :
+                  isHeading ? 'Tiêu Đề' :
+                    isText ? 'Văn Bản' :
+                      isButton ? 'Nút Bấm' :
+                        isImage ? 'Hình Ảnh' :
+                          isFrame ? 'Khung Phân Vùng' : 'Hình Khối'
         );
       }
 
       if (subtitle) {
         if (isChart) subtitle.textContent = 'ECharts Code & Nguồn Dữ Liệu';
+        else if (isTable) subtitle.textContent = 'Bảng HTML Tối Ưu (Chuẩn Superset)';
         else if (isKpi) subtitle.textContent = 'Chỉ Số Tổng Hợp Tự Động';
         else if (isFilter) subtitle.textContent = 'Bộ Lọc Tương Tác Dữ Liệu';
         else if (isHeading) subtitle.textContent = 'Tiêu Đề Báo Cáo / Khu Vực';
@@ -9785,6 +12651,9 @@ ${expectedOutput}
       const secChart = document.getElementById('fpsSectionChart');
       if (secChart) secChart.style.display = isChart ? 'block' : 'none';
 
+      const secTable = document.getElementById('fpsSectionTable');
+      if (secTable) secTable.style.display = isTable ? 'block' : 'none';
+
       const secKpi = document.getElementById('fpsSectionKpi');
       if (secKpi) secKpi.style.display = isKpi ? 'block' : 'none';
 
@@ -9813,7 +12682,7 @@ ${expectedOutput}
       if (secLine) secLine.style.display = isLine ? 'flex' : 'none';
 
       const secShadow = document.getElementById('fpsSectionShadow');
-      if (secShadow) secShadow.style.display = (isShape || isFrame || isChart || isKpi) ? 'block' : 'none';
+      if (secShadow) secShadow.style.display = (isShape || isFrame || isChart || isKpi || isTable) ? 'block' : 'none';
 
       // Synchronize Chart section
       if (isChart) {
@@ -9822,6 +12691,20 @@ ${expectedOutput}
           const sources = DataStore.getAvailableSources();
           srcSelect.innerHTML = sources.map(s => `<option value="${escapeHtml(s.key)}">${escapeHtml(s.label)}</option>`).join('');
           if (item.dataSourceKey) srcSelect.value = item.dataSourceKey;
+        }
+      }
+
+      // Synchronize Table section
+      if (isTable) {
+        const srcSelect = document.getElementById('fpsTableSourceSelect');
+        if (srcSelect) {
+          const sources = DataStore.getAvailableSources();
+          srcSelect.innerHTML = sources.map(s => `<option value="${escapeHtml(s.key)}">${escapeHtml(s.label)}</option>`).join('');
+          if (item.dataSourceKey) srcSelect.value = item.dataSourceKey;
+        }
+        const badge = document.getElementById('fpsTableModeBadge');
+        if (badge) {
+          badge.textContent = item.queryMode === 'aggregate' ? '📊 Tổng Hợp Phân Nhóm (Group By)' : '📄 Bản Ghi Chi Tiết (Raw Records)';
         }
       }
 
@@ -9931,7 +12814,30 @@ ${expectedOutput}
             `;
           }
         }
+
+        const targetTabSelect = document.getElementById('fpsFilterTargetTabSelect');
+        if (targetTabSelect) {
+          const tabs = DashboardState.present?.tabs || [];
+          const curHomeTab = tabs.find(t => t.id === (item.tabId || 'default'))?.name || 'Tab hiện tại';
+          targetTabSelect.innerHTML = `
+            <option value="current">📌 Tab hiện tại (${escapeHtml(curHomeTab)})</option>
+            <option value="all">🌐 Tất cả các Tab (Global Filter)</option>
+            ${tabs.map(t => `<option value="${t.id}" ${t.id === item.targetTab ? 'selected' : ''}>📑 ${escapeHtml(t.name)}</option>`).join('')}
+          `;
+          targetTabSelect.value = item.targetTab || 'current';
+        }
+
+        const targetScopeSelect = document.getElementById('fpsFilterTargetScopeSelect');
+        const chartsPickerWrap = document.getElementById('fpsFilterChartsPickerWrap');
+        if (targetScopeSelect) {
+          targetScopeSelect.value = item.targetScope || 'all';
+        }
+        if (chartsPickerWrap) {
+          chartsPickerWrap.style.display = (item.targetScope === 'custom') ? 'block' : 'none';
+        }
+        this.renderSidebarFilterChartsPicker(item);
       }
+
 
       // Synchronize Text / Heading section
       if (isText || isHeading) {
@@ -10685,6 +13591,170 @@ ${expectedOutput}
     return { x: nextX, y: nextY, w: defaultW, h: defaultH };
   }
 
+  // ===========================================================================
+  // CLIPBOARD MANAGER (CTRL+C / CTRL+V / DUPLICATE INDEPENDENT COMPONENTS)
+  // Đảm bảo các thành phần tạo mới (Chart, Filter, KPI, Table...) hoàn toàn độc lập
+  // ===========================================================================
+  let _clipboardItem = null;
+
+  function generateUniqueItemId(type = 'widget') {
+    let newId;
+    let attempts = 0;
+    do {
+      attempts++;
+      newId = `${type}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    } while (attempts < 100 && DashboardState.present && Array.isArray(DashboardState.present.items) && DashboardState.present.items.some(i => i.id === newId));
+    return newId;
+  }
+
+  function copySelectedItem() {
+    if (DashboardState.mode === 'preview') return false;
+    if (!DashboardState.selectedItemId) return false;
+
+    syncItemPositionsFromDOM();
+    const item = DashboardState.present.items.find(i => i.id === DashboardState.selectedItemId);
+    if (!item) return false;
+
+    // Deep clone item vào bộ nhớ tạm
+    _clipboardItem = JSON.parse(JSON.stringify(item));
+    try {
+      sessionStorage.setItem('db_item_clipboard', JSON.stringify(_clipboardItem));
+    } catch (e) { }
+
+    const typeLabels = {
+      chart: 'biểu đồ',
+      filter: 'bộ lọc',
+      table: 'bảng dữ liệu',
+      kpi: 'thẻ chỉ số KPI',
+      frame: 'khung nhóm Frame',
+      heading: 'tiêu đề',
+      text: 'văn bản ghi chú',
+      shape: 'hình khối Shape',
+      image: 'hình ảnh'
+    };
+    const typeLabel = typeLabels[item.type] || 'thành phần';
+    showToast(`✓ Đã sao chép ${typeLabel} "${item.name || item.id}"! Nhấn Ctrl + V để dán.`, 'info');
+    return true;
+  }
+
+  function pasteCopiedItem() {
+    if (DashboardState.mode === 'preview') return false;
+
+    let sourceItem = _clipboardItem;
+    if (!sourceItem) {
+      try {
+        const stored = sessionStorage.getItem('db_item_clipboard');
+        if (stored) sourceItem = JSON.parse(stored);
+      } catch (e) { }
+    }
+
+    if (!sourceItem) {
+      showToast('Bộ nhớ tạm đang trống. Hãy chọn một biểu đồ hoặc bộ lọc rồi nhấn Ctrl + C để sao chép trước!', 'warning');
+      return false;
+    }
+
+    syncItemPositionsFromDOM();
+    DashboardState.pushSnapshot();
+
+    // 1. Tạo bản sao sâu (deep clone) hoàn toàn độc lập, cắt đứt mọi tham chiếu bộ nhớ
+    const orig = JSON.parse(JSON.stringify(sourceItem));
+    const newId = generateUniqueItemId(orig.type || 'widget');
+    const curActiveTab = DashboardState.present.activeTabId || 'default';
+
+    // 2. Tên mới phân biệt rõ ràng
+    const typeDefaultNames = {
+      chart: 'Biểu Đồ',
+      filter: 'Bộ Lọc',
+      table: 'Bảng Dữ Liệu',
+      kpi: 'Chỉ Số KPI',
+      frame: 'Khung Nhóm',
+      heading: 'Tiêu Đề',
+      text: 'Ghi Chú',
+      shape: 'Hình Khối',
+      image: 'Hình Ảnh'
+    };
+    let baseName = orig.name || typeDefaultNames[orig.type] || 'Thành phần';
+    let newName = baseName;
+    if (!newName.includes('(Bản sao)')) {
+      newName = `${newName} (Bản sao)`;
+    }
+
+    // 3. Tính toán vị trí dán an toàn trên Canvas của Tab hiện tại (Offset +30px)
+    let targetX = (orig.pos?.x !== undefined ? orig.pos.x : 24) + 30;
+    let targetY = (orig.pos?.y !== undefined ? orig.pos.y : 24) + 30;
+    const w = orig.pos?.w || 320;
+    const h = orig.pos?.h || 200;
+
+    // Giới hạn trong phạm vi khung Canvas an toàn (24px đến 1336px)
+    if (targetX + w > 1336) {
+      targetX = 24;
+      targetY = Math.max(24, targetY + 30);
+    }
+    if (targetX < 24) targetX = 24;
+    if (targetY < 24) targetY = 24;
+
+    // Tự động đẩy clipboard tiếp +30px cho các lần Ctrl+V liên tiếp
+    if (_clipboardItem && _clipboardItem.pos) {
+      _clipboardItem.pos.x = targetX;
+      _clipboardItem.pos.y = targetY;
+    }
+
+    // 4. Nếu thành phần gốc là bộ lọc ghim trên top bar, khi dán sẽ đưa về Canvas tự do
+    const wasPinned = Boolean(orig.isPinnedTop || orig.container === 'sticky_top');
+
+    const newItem = {
+      ...orig,
+      id: newId,
+      name: newName,
+      tabId: curActiveTab,
+      isPinnedTop: false,
+      container: null,
+      pos: {
+        ...orig.pos,
+        x: targetX,
+        y: wasPinned ? Math.max(140, targetY) : targetY,
+        w: w,
+        h: h,
+        zIndex: Math.max(10, (orig.pos?.zIndex || 10) + 1)
+      }
+    };
+
+    DashboardState.present.items.push(newItem);
+    DashboardState.selectedItemId = newId;
+    DashboardState.isDirty = true;
+
+    renderCanvas();
+    triggerDebouncedAutoSave();
+
+    if (typeof FigmaPropertiesSidebar !== 'undefined' && FigmaPropertiesSidebar.isOpen && FigmaPropertiesSidebar.isOpen()) {
+      FigmaPropertiesSidebar.open(newId);
+    }
+
+    const typeLabels = {
+      chart: 'biểu đồ',
+      filter: 'bộ lọc',
+      table: 'bảng dữ liệu',
+      kpi: 'thẻ chỉ số KPI',
+      frame: 'khung nhóm Frame',
+      heading: 'tiêu đề',
+      text: 'văn bản ghi chú',
+      shape: 'hình khối Shape',
+      image: 'hình ảnh'
+    };
+    const typeLabel = typeLabels[newItem.type] || 'thành phần';
+    showToast(`✓ Đã tạo mới ${typeLabel} "${newItem.name}" độc lập thành công!`, 'success');
+    return true;
+  }
+
+  function duplicateItemById(itemId) {
+    if (DashboardState.mode === 'preview') return false;
+    DashboardState.selectedItemId = itemId;
+    if (copySelectedItem()) {
+      return pasteCopiedItem();
+    }
+    return false;
+  }
+
   const TopFilterBarManager = {
     getConfig(tabId = null) {
       const curTab = tabId || DashboardState.present.activeTabId || 'default';
@@ -10981,20 +14051,40 @@ ${expectedOutput}
         `;
       } else {
         pinnedFilterItems.forEach(item => {
+          const isSelected = DashboardState.mode !== 'preview' && DashboardState.selectedItemId === item.id;
           const wrapper = document.createElement('div');
-          wrapper.className = 'db-top-filter-item-wrapper';
+          wrapper.className = `db-top-filter-item-wrapper ${isSelected ? 'selected' : ''}`;
           wrapper.id = `pinned_item_${item.id}`;
 
           wrapper.innerHTML = `
             <div class="db-top-filter-item-header">
               <span class="db-top-filter-item-title">${escapeHtml(item.name || item.filterColumn)}</span>
               ${DashboardState.mode !== 'preview' ? `
-                <button type="button" class="db-top-filter-unpin-btn" data-unpin-id="${item.id}" title="Tháo khỏi thanh trên cùng, chuyển về canvas tự do">📌 Bỏ ghim</button>
+                <div style="display:flex;align-items:center;gap:4px;">
+                  <button type="button" class="db-top-filter-unpin-btn" data-duplicate-id="${item.id}" title="Nhân bản bộ lọc này (Ctrl+C, Ctrl+V)">📋 Nhân bản</button>
+                  <button type="button" class="db-top-filter-unpin-btn" data-unpin-id="${item.id}" title="Tháo khỏi thanh trên cùng, chuyển về canvas tự do">📌 Bỏ ghim</button>
+                </div>
               ` : ''}
             </div>
             <div class="db-item-body" id="item_body_${item.id}"></div>
           `;
           topBodyEl.appendChild(wrapper);
+
+          wrapper.addEventListener('click', (e) => {
+            if (DashboardState.mode === 'preview') return;
+            if (e.target.closest('[data-unpin-id]') || e.target.closest('[data-duplicate-id]')) return;
+            DashboardState.selectedItemId = item.id;
+            document.querySelectorAll('.db-item-box, .db-top-filter-item-wrapper').forEach(b => b.classList.remove('selected'));
+            wrapper.classList.add('selected');
+            if (typeof FigmaPropertiesSidebar !== 'undefined' && FigmaPropertiesSidebar.isOpen && FigmaPropertiesSidebar.isOpen()) {
+              FigmaPropertiesSidebar.open(item.id);
+            }
+          });
+
+          wrapper.querySelector('[data-duplicate-id]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            duplicateItemById(item.id);
+          });
 
           wrapper.querySelector('[data-unpin-id]')?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -11153,7 +14243,7 @@ ${expectedOutput}
               <button class="db-item-action-btn props-btn" data-action="open-sidebar" data-id="${item.id}" title="Mở bảng Thuộc tính / Sidebar (Figma Properties)">⚙️ Thuộc tính</button>
               ${item.type === 'chart' ? `<button class="db-item-action-btn edit" data-action="edit" data-id="${item.id}" title="Sửa code ECharts">✏️ Code</button>` : ''}
               ${item.type !== 'chart' ? `<button class="db-item-action-btn edit" data-action="edit-widget" data-id="${item.id}" title="Chỉnh sửa widget">✏️ Sửa</button>` : ''}
-              <button class="db-item-action-btn" data-action="duplicate" data-id="${item.id}" title="Nhân bản">📋</button>
+              <button class="db-item-action-btn" data-action="duplicate" data-id="${item.id}" title="Nhân bản (Ctrl+C, Ctrl+V)">📋</button>
               <button class="db-item-action-btn delete" data-action="delete" data-id="${item.id}" title="Xóa">🗑️</button>
             </div>
           </div>
@@ -11164,6 +14254,7 @@ ${expectedOutput}
             <button class="db-item-mini-btn" data-action="toggle-header" data-id="${item.id}" title="Hiện lại thanh tiêu đề (Header)">👁️ Hiện Header</button>
             <button class="db-item-mini-btn props-btn" data-action="open-sidebar" data-id="${item.id}" title="Mở bảng Thuộc tính / Sidebar">⚙️ Thuộc tính</button>
             ${item.type === 'chart' ? `<button class="db-item-mini-btn" data-action="edit" data-id="${item.id}" title="Sửa code ECharts">✏️ Code</button>` : `<button class="db-item-mini-btn" data-action="edit-widget" data-id="${item.id}" title="Sửa widget">✏️ Sửa</button>`}
+            <button class="db-item-mini-btn" data-action="duplicate" data-id="${item.id}" title="Nhân bản (Ctrl+C, Ctrl+V)">📋</button>
             <button class="db-item-mini-btn is-danger" data-action="delete" data-id="${item.id}" title="Xóa">🗑️</button>
           </div>
           <div class="db-item-body" id="item_body_${item.id}"></div>
@@ -11201,9 +14292,9 @@ ${expectedOutput}
     // Deselect and hide toolbar when clicking on canvas background
     canvas.addEventListener('click', (e) => {
       if (DashboardState.mode === 'preview') return;
-      if (!e.target.closest('.db-item-box') && !e.target.closest('#canvaTextToolbar') && !e.target.closest('#figmaPropertiesSidebar')) {
+      if (!e.target.closest('.db-item-box') && !e.target.closest('.db-top-filter-item-wrapper') && !e.target.closest('#canvaTextToolbar') && !e.target.closest('#figmaPropertiesSidebar')) {
         DashboardState.selectedItemId = null;
-        document.querySelectorAll('.db-item-box').forEach(b => b.classList.remove('selected'));
+        document.querySelectorAll('.db-item-box, .db-top-filter-item-wrapper').forEach(b => b.classList.remove('selected'));
         CanvaTextManager.hide();
         if (typeof FigmaPropertiesSidebar !== 'undefined') {
           FigmaPropertiesSidebar.close();
@@ -11244,8 +14335,8 @@ ${expectedOutput}
         // Luôn sử dụng Light Theme cho ECharts
         chart = echarts.init(chartDiv, null);
 
-        const data = getFilteredData(item.dataSourceKey, [], item.tabId);
-        const { option, error } = evaluateEChartsCode(item.code, data, { tabId: item.tabId }, chart);
+        const data = getFilteredData(item.dataSourceKey, [], item.tabId, item.id);
+        const { option, error } = evaluateEChartsCode(item.code, data, { tabId: item.tabId, chartId: item.id }, chart);
 
         if (error) {
           chartDiv.innerHTML = `<div class="db-chart-error-banner" style="color:#ef4444;padding:12px;text-align:center;font-size:12px;">⚠️ Lỗi render ECharts:<br/>${escapeHtml(error)}<br/><button class="db-btn-tool primary" style="margin-top:8px;" onclick="window.ChartStudioModal && window.ChartStudioModal.open('${item.id}')">Mở Studio Sửa Lỗi</button></div>`;
@@ -11365,11 +14456,15 @@ ${expectedOutput}
 
       const itemTabId = item.tabId || DashboardState.present?.activeTabId || 'default';
       const tabFiltersMap = DashboardState.tabFilters?.[itemTabId] || {};
-      const filterState = tabFiltersMap[col] !== undefined
-        ? tabFiltersMap[col]
-        : (itemTabId === (DashboardState.present?.activeTabId || 'default') ? DashboardState.activeFilters[col] : undefined);
+      let filterState = item.currentFilterValue;
+      if (filterState === undefined) {
+        filterState = tabFiltersMap[col] !== undefined
+          ? tabFiltersMap[col]
+          : (itemTabId === (DashboardState.present?.activeTabId || 'default') ? DashboardState.activeFilters[col] : undefined);
+      }
 
       const setTabFilterState = (valObj, keepDropdownOpen = false) => {
+        item.currentFilterValue = valObj;
         if (!DashboardState.tabFilters) DashboardState.tabFilters = {};
         if (!DashboardState.tabFilters[itemTabId]) DashboardState.tabFilters[itemTabId] = {};
         const isCurrentActiveTab = itemTabId === (DashboardState.present?.activeTabId || 'default');
@@ -11525,6 +14620,13 @@ ${expectedOutput}
       let parentBadgeHtml = '';
       if (parentItem) {
         parentBadgeHtml = `<span class="db-filter-parent-badge" title="Bộ lọc phụ thuộc vào: ${escapeHtml(parentItem.name || parentItem.filterColumn)}">↳ Con: ${escapeHtml(parentItem.name || parentItem.filterColumn)}</span>`;
+      }
+      if (item.targetTab && item.targetTab !== 'current') {
+        const targetTabName = item.targetTab === 'all' ? 'Mọi Tab' : (DashboardState.present?.tabs?.find(t => t.id === item.targetTab)?.name || item.targetTab);
+        parentBadgeHtml += ` <span class="db-filter-parent-badge" style="background:#e0e7ff;color:#3730a3;border-color:#c7d2fe;" title="Bộ lọc trỏ vào tab: ${escapeHtml(targetTabName)}">📑 ${escapeHtml(targetTabName)}</span>`;
+      }
+      if (item.targetScope === 'custom' && Array.isArray(item.targetChartIds) && item.targetChartIds.length > 0) {
+        parentBadgeHtml += ` <span class="db-filter-parent-badge" style="background:#fef3c7;color:#92400e;border-color:#fde68a;" title="Chỉ áp dụng cho ${item.targetChartIds.length} biểu đồ cụ thể">🎯 ${item.targetChartIds.length} charts</span>`;
       }
 
       // 3. Render giao diện các ô điều khiển theo từng Loại Bộ Lọc (BI Platform)
@@ -11929,7 +15031,7 @@ ${expectedOutput}
         }
       }, 20);
     } else if (item.type === 'kpi') {
-      const data = getFilteredData(item.dataSourceKey, [], item.tabId || DashboardState.present?.activeTabId || 'default');
+      const data = getFilteredData(item.dataSourceKey, [], item.tabId || DashboardState.present?.activeTabId || 'default', item.id);
       const numVals = data.map(r => Number(r[item.metricColumn])).filter(n => !isNaN(n));
       let sum = 0;
       if (item.aggregation === 'avg') {
@@ -11946,10 +15048,15 @@ ${expectedOutput}
 
       const kpiFs = item.fontSize || '30px';
       const kpiColor = item.color || 'var(--db-text-main)';
+      const kpiBg = item.cardBg || '';
+      const kpiIcon = item.icon || '';
+      const iconHtml = kpiIcon ? `<div style="font-size:24px;margin-bottom:4px;line-height:1;">${escapeHtml(kpiIcon)}</div>` : '';
+
       body.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;">
-          <div style="font-size:11px;text-transform:uppercase;color:var(--db-text-sub);font-weight:700;margin-bottom:4px;">${escapeHtml(item.name)}</div>
-          <div style="font-size:${escapeHtml(kpiFs)};font-weight:800;color:${escapeHtml(kpiColor)};">${escapeHtml(item.prefix || '')}${new Intl.NumberFormat('vi-VN').format(Math.round(sum))}${escapeHtml(item.suffix || '')}</div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;padding:8px;box-sizing:border-box;${kpiBg ? `background:${kpiBg};border-radius:10px;` : ''}">
+          ${iconHtml}
+          <div style="font-size:11px;text-transform:uppercase;color:var(--db-text-sub);font-weight:700;margin-bottom:4px;letter-spacing:0.5px;">${escapeHtml(item.name)}</div>
+          <div style="font-size:${escapeHtml(kpiFs)};font-weight:800;color:${escapeHtml(kpiColor)};letter-spacing:-0.5px;line-height:1.15;">${escapeHtml(item.prefix || '')}${new Intl.NumberFormat('vi-VN').format(Math.round(sum))}${escapeHtml(item.suffix || '')}</div>
         </div>
       `;
     } else if (item.type === 'heading') {
@@ -11987,6 +15094,8 @@ ${expectedOutput}
           [Khung phân vùng: ${escapeHtml(item.name)}]
         </div>
       `;
+    } else if (item.type === 'table') {
+      renderSupersetTable(item, body);
     }
   }
 
@@ -12459,7 +15568,7 @@ ${expectedOutput}
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('mb_dashboard_canvas_bg', bgType);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     applyCanvasBackgroundUI(bgType);
 
@@ -12469,7 +15578,7 @@ ${expectedOutput}
         SavedDashboardsCatalog.saveCurrent(false);
       }
       saveLastEditedSessionToLocalStorage();
-    } catch (_) {}
+    } catch (_) { }
     triggerDebouncedAutoSave();
 
     const bgNames = {
@@ -12511,7 +15620,7 @@ ${expectedOutput}
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('mb_dashboard_canvas_bg', bgType);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Đánh dấu active trong menu dropdown nếu có
     document.querySelectorAll('#dropdownCanvasBg [data-bg-type]').forEach(btn => {
@@ -12733,9 +15842,19 @@ ${expectedOutput}
       addChartToCanvas();
     });
 
+    document.getElementById('menuAddTable')?.addEventListener('click', () => {
+      addElementsDropdown?.classList.remove('open');
+      WidgetConfigModal.open('table');
+    });
+
     document.getElementById('menuAddFilter')?.addEventListener('click', () => {
       addElementsDropdown?.classList.remove('open');
       WidgetConfigModal.open('filter');
+    });
+
+    document.getElementById('menuAddKPI')?.addEventListener('click', () => {
+      addElementsDropdown?.classList.remove('open');
+      WidgetConfigModal.open('kpi');
     });
 
     document.getElementById('menuAddTopFilterBar')?.addEventListener('click', () => {
@@ -13009,10 +16128,12 @@ ${expectedOutput}
 
     window.addEventListener('keydown', async (e) => {
       const activeTag = document.activeElement?.tagName?.toLowerCase();
-      const isInputFocused = activeTag === 'input' || activeTag === 'textarea';
+      const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || Boolean(document.activeElement?.isContentEditable);
+      const isModalOpen = Boolean(document.querySelector('.chart-editor-modal.open, .viz-modal.open, .db-simple-modal.open, .app-dialog-overlay'));
+      const hasTextSelection = Boolean(window.getSelection && window.getSelection().toString().trim().length > 0);
 
       // Canva text shortcut formatting (Ctrl+B, Ctrl+I, Ctrl+U)
-      if ((e.ctrlKey || e.metaKey) && DashboardState.selectedItemId && !isInputFocused) {
+      if ((e.ctrlKey || e.metaKey) && DashboardState.selectedItemId && !isInputFocused && !isModalOpen) {
         const item = DashboardState.present.items.find(i => i.id === DashboardState.selectedItemId);
         if (item && (item.type === 'heading' || item.type === 'text')) {
           const keyLower = e.key.toLowerCase();
@@ -13029,6 +16150,35 @@ ${expectedOutput}
             CanvaTextManager.toggleUnderline();
             return;
           }
+        }
+      }
+
+      // Ctrl + C / Cmd + C: Sao chép thành phần (Biểu đồ, Bộ lọc, Bảng, KPI,...)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+        if (!isInputFocused && !isModalOpen && !hasTextSelection && DashboardState.mode !== 'preview') {
+          if (DashboardState.selectedItemId) {
+            e.preventDefault();
+            copySelectedItem();
+            return;
+          }
+        }
+      }
+
+      // Ctrl + V / Cmd + V: Dán thành phần đã sao chép tạo thành phần MỚI ĐỘC LẬP
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+        if (!isInputFocused && !isModalOpen && DashboardState.mode !== 'preview') {
+          e.preventDefault();
+          pasteCopiedItem();
+          return;
+        }
+      }
+
+      // Ctrl + D / Cmd + D: Nhân bản nhanh thành phần đang chọn
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+        if (!isInputFocused && !isModalOpen && DashboardState.selectedItemId && DashboardState.mode !== 'preview') {
+          e.preventDefault();
+          duplicateItemById(DashboardState.selectedItemId);
+          return;
         }
       }
 
@@ -13449,10 +16599,18 @@ ${expectedOutput}
       } else if (action === 'edit-widget') {
         const item = DashboardState.present.items.find(i => i.id === itemId);
         if (item) {
-          DashboardState.selectedItemId = itemId;
-          document.querySelectorAll('.db-item-box').forEach(b => b.classList.remove('selected'));
-          document.getElementById(`item_${itemId}`)?.classList.add('selected');
-          FigmaPropertiesSidebar.open(itemId);
+          if (item.type === 'table') {
+            WidgetConfigModal.open('table', item.id);
+          } else if (item.type === 'filter') {
+            WidgetConfigModal.open('filter', item.id);
+          } else if (['kpi', 'button', 'frame', 'heading', 'text', 'shape'].includes(item.type)) {
+            WidgetConfigModal.open(item.type, item.id);
+          } else {
+            DashboardState.selectedItemId = itemId;
+            document.querySelectorAll('.db-item-box').forEach(b => b.classList.remove('selected'));
+            document.getElementById(`item_${itemId}`)?.classList.add('selected');
+            FigmaPropertiesSidebar.open(itemId);
+          }
         }
       } else if (action === 'toggle-header') {
         const item = DashboardState.present.items.find(i => i.id === itemId);
@@ -13505,22 +16663,7 @@ ${expectedOutput}
           triggerDebouncedAutoSave();
         }
       } else if (action === 'duplicate') {
-        syncItemPositionsFromDOM();
-        const orig = DashboardState.present.items.find(i => i.id === itemId);
-        if (orig) {
-          DashboardState.pushSnapshot();
-          const dupId = orig.type + '_' + Date.now();
-          DashboardState.present.items.push({
-            ...JSON.parse(JSON.stringify(orig)),
-            id: dupId,
-            name: `${orig.name} (Bản sao)`,
-            pos: { ...orig.pos, x: orig.pos.x + 30, y: orig.pos.y + 30 }
-          });
-          DashboardState.isDirty = true;
-          renderCanvas();
-          triggerDebouncedAutoSave();
-          showToast('Đã nhân bản!', 'success');
-        }
+        duplicateItemById(itemId);
       } else if (action === 'delete') {
         const ok = await AppDialog.confirm('Bạn có chắc muốn xóa phần tử này?', 'Xác Nhận Xóa', { isDanger: true, confirmText: 'Xóa' });
         if (ok) {
@@ -13595,7 +16738,7 @@ ${expectedOutput}
       if (savedCollapsed === 'true') {
         toolbar.classList.add('is-collapsed');
       }
-    } catch (_) {}
+    } catch (_) { }
     updateCollapseBtnUI();
 
     // 2. Toggle Thu Nhỏ / Mở Rộng
@@ -13605,7 +16748,7 @@ ${expectedOutput}
       const isCollapsed = toolbar.classList.contains('is-collapsed');
       try {
         localStorage.setItem('figma_toolbar_collapsed', isCollapsed ? 'true' : 'false');
-      } catch (_) {}
+      } catch (_) { }
       updateCollapseBtnUI();
       // Đóng dropdown nếu đang mở
       document.getElementById('dropdownAddElements')?.classList.remove('open');
@@ -13631,7 +16774,7 @@ ${expectedOutput}
           toolbar.classList.remove('opens-down');
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // 4. Di chuyển tự do (Draggable)
     let isDragging = false;
@@ -13698,7 +16841,7 @@ ${expectedOutput}
       const rect = toolbar.getBoundingClientRect();
       try {
         localStorage.setItem('figma_toolbar_pos', JSON.stringify({ left: Math.round(rect.left), top: Math.round(rect.top) }));
-      } catch (_) {}
+      } catch (_) { }
     }
 
     dragGrip?.addEventListener('mousedown', onMouseDown);
@@ -13826,7 +16969,7 @@ ${expectedOutput}
             getReq.onsuccess = () => {
               const res = getReq.result;
               if (res) {
-                try { store.delete('latest_import'); } catch (_) {}
+                try { store.delete('latest_import'); } catch (_) { }
               }
               settle(res || null);
             };
@@ -13852,7 +16995,7 @@ ${expectedOutput}
       if (dbResult && dbResult.configJsonStr) {
         return dbResult;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     try {
       const localJson = localStorage.getItem('mb_dashboard_pending_import_json');
@@ -13864,7 +17007,7 @@ ${expectedOutput}
           excelEntries: []
         };
       }
-    } catch (_) {}
+    } catch (_) { }
 
     return null;
   }
@@ -13899,8 +17042,8 @@ ${expectedOutput}
                 sheetsData[sName] = rows;
               }
             });
-            const sizeStr = entry.buffer.byteLength >= 1048576 
-              ? (entry.buffer.byteLength / 1048576).toFixed(1) + ' MB' 
+            const sizeStr = entry.buffer.byteLength >= 1048576
+              ? (entry.buffer.byteLength / 1048576).toFixed(1) + ' MB'
               : Math.max(1, Math.round(entry.buffer.byteLength / 1024)) + ' KB';
 
             DataStore.files[entry.name] = {
@@ -13968,7 +17111,7 @@ ${expectedOutput}
               successMsg: `✓ Đã nạp thành công Dashboard từ "${directFileUrl}"!`
             });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // 1. Kiểm tra Pending Import từ Hub (với IndexedDB v3 và localStorage fallback)
@@ -14006,9 +17149,9 @@ ${expectedOutput}
                   restored = await restoreDashboardFromFolderFiles(filesArray);
                 }
               }
-            } catch (_) {}
+            } catch (_) { }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       // 3. Khôi phục từ phiên làm việc gần nhất (Last Edited Session) trong localStorage
@@ -14026,7 +17169,7 @@ ${expectedOutput}
                     DataStore.files = cachedFiles;
                   }
                 }
-              } catch (_) {}
+              } catch (_) { }
 
               restored = loadDashboardFromConfig(lastConfig, {
                 successMsg: `✓ Đã tự động tái hiện Dashboard vừa chỉnh sửa gần nhất ("${lastConfig.title || 'Dashboard'}")!`
@@ -14047,7 +17190,7 @@ ${expectedOutput}
               successMsg: `✓ Đã tái hiện Dashboard đã lưu gần nhất: "${savedList[0].title || 'Dashboard'}"`
             });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     }
 

@@ -515,6 +515,14 @@ ${outDesc}
 
 ${extraRules.join('\n\n')}
 
+*. **BẮT BUỘC COMMENT ĐẦY ĐỦ ĐỂ DỄ BẢO TRÌ (CODE MAINTENANCE & CLEAN CODE)**:
+   - Mã nguồn BẮT BUỘC phải có comment tiếng Việt chi tiết, rõ ràng từng bước nghiệp vụ:
+     * // 1. TRÍCH XUẤT VÀ KIỂM TRA DỮ LIỆU ĐẦU VÀO
+     * // 2. LÀM SẠCH, CHUẨN HÓA VÀ ÉP KIỂU SỐ / CHUỖI AN TOÀN
+     * // 3. XỬ LÝ LOGIC NGHIỆP VỤ / LỌC / KẾT NỐI (JOIN) / TỔNG HỢP (AGGREGATION)
+     * // 4. KẾT XUẤT BÁO CÁO & IN TỔNG KẾT RA TERMINAL
+   - Đặt tên biến rõ nghĩa theo đúng nghiệp vụ, tuyệt đối không dùng biến viết tắt khó hiểu.
+
 *. **ĐỊNH DẠNG ĐẦU RA BẮT BUỘC**:
    - CHỈ TRẢ VỀ DUY NHẤT một khối mã JavaScript trong \`\`\`javascript ... \`\`\`.
    - KHÔNG viết lời chào hỏi, giải thích dài dòng trước hoặc sau khối mã.

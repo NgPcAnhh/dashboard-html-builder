@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Che Mờ & Bảo Mật Dữ Liệu (Excel & CSV) - Data Tool Hub</title>
+
+  <!-- CSS Giao Diện Che Mờ & Theme MB Bank -->
+  <link rel="stylesheet" href="css/data-masker.css">
+  <link rel="stylesheet" href="css/theme.css">
+
+  <!-- Thư viện SheetJS -->
+  <script src="js/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Dữ liệu JSON & JSON Storage Engine -->
+  <script src="data/storage.js"></script>
+  <script src="js/json-storage.js"></script>
+
+  <!-- Khởi tạo Theme sớm -->
+  <script src="js/theme.js"></script>
+</head>
+
+<body>
+
+  <!-- TOP NAVBAR THỐNG NHẤT HỆ THỐNG -->
+  <nav class="hub-navbar" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-subtle); position: sticky; top: 0; z-index: 100;">
+    <div class="nav-left" style="display: flex; align-items: center; gap: 14px;">
+      <a href="index.html" class="btn-secondary-action" style="text-decoration: none; font-size: 13px; padding: 6px 14px;" title="Quay lại Màn hình Quản lý Tools">
+        🏠 Quản lý Tools
+      </a>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(0, 122, 204, 0.15); display: flex; align-items: center; justify-content: center; font-size: 18px;">🎭</div>
+        <div>
+          <span style="font-size: 14.5px; font-weight: 700; color: var(--text-main);">Che Mờ & Bảo Mật Dữ Liệu</span>
+          <span style="font-size: 11px; margin-left: 6px; padding: 2px 6px; border-radius: 4px; background: rgba(78, 201, 176, 0.15); color: var(--accent-cyan); font-weight: 600;">Excel &amp; CSV</span>
+        </div>
+      </div>
+    </div>
+    <div class="nav-right" style="display: flex; align-items: center; gap: 10px;">
+      <button class="btn-theme-toggle" id="themeToggleBtn" title="Chuyển nhanh Giao diện Sáng / Tối" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); color: var(--text-main); padding: 6px 14px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600;">
+        <span class="theme-icon">🌙</span>
+        <span class="theme-text">Dark Mode</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="masker-container">
+
+    <!-- HERO HEADER -->
+    <header class="masker-header">
+      <h1>🎭 Che Mờ & Bảo Mật Dữ Liệu (Data Masking & Anonymization)</h1>
+      <p>
+        Tự động ẩn danh hóa, che mờ thông tin cá nhân và dữ liệu nhạy cảm trên <b>tất cả các Sheet Excel (.xlsx, .xls)</b> hoặc <b>file CSV</b> trực tiếp 100% trên trình duyệt (Client-side an toàn, không tải lên server ngoài). 
+        Quy tắc chuẩn: <b>ô dưới 5 ký tự che toàn bộ bằng *****</b>, <b>ô trên 5 ký tự giữ nguyên 3 ký tự đầu và che mờ các ký tự sau (ví dụ: abc****)</b>.
+      </p>
+    </header>
+
+    <!-- SECTION 1: CẤU HÌNH QUY TẮC & TÙY CHỌN (OPTIONS CARD) -->
+    <section class="card-section">
+      <div class="section-title-row">
+        <h2 class="section-title">
+          <span>⚙️ Cấu Hình Quy Tắc Che Mờ &amp; Tiêu Đề</span>
+        </h2>
+        <span class="section-badge">Tự Động Áp Dụng</span>
+      </div>
+
+      <div class="options-grid">
+
+        <!-- BOX 1: TÙY CHỌN DÒNG TIÊU ĐỀ (HEADER) -->
+        <div class="option-box">
+          <div class="option-box-header">
+            <span class="option-box-title">📋 Tùy Chọn Header (Tiêu Đề Cột)</span>
+          </div>
+          <label class="custom-checkbox-label">
+            <input type="checkbox" id="chkHasHeader" checked />
+            <span>Dòng đầu tiên là Header (Giữ nguyên không che)</span>
+          </label>
+          <p class="option-desc">
+            Khi bật, dòng tiêu đề đầu tiên sẽ được <b>bảo toàn nguyên vẹn 100%</b> để không làm mất tên các cột. Nếu bỏ chọn, toàn bộ dòng đầu cũng sẽ bị che mờ như dữ liệu bình thường.
+          </p>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <span style="font-size: 12px; color: var(--text-muted);">Vị trí dòng Header:</span>
+            <select class="masker-select" id="selectHeaderRow">
+              <option value="0" selected>Dòng 1 (Mặc định)</option>
+              <option value="1">Dòng 2</option>
+              <option value="2">Dòng 3</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- BOX 2: QUY TẮC CHE MỜ DỮ LIỆU -->
+        <div class="option-box">
+          <div class="option-box-header">
+            <span class="option-box-title">🔒 Quy Tắc Che Mờ Ký Tự</span>
+          </div>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" name="fiveCharsRule" id="radioFiveAll" checked />
+              <span><b>Ô dưới 5 ký tự:</b> Che toàn bộ bằng <code>*****</code></span>
+            </label>
+            <label class="radio-item" style="margin-left: 20px; font-size: 11.5px; color: var(--text-dim);">
+              <input type="radio" name="fiveCharsRule" id="radioFiveKeep3" />
+              <span>(Tùy chọn: Ô đúng 5 ký tự giữ 3 ký tự đầu ví dụ <code>abc**</code>)</span>
+            </label>
+          </div>
+          <p class="option-desc" style="border-top: 1px dashed var(--border-subtle); padding-top: 6px;">
+            <b>Ô trên 5 ký tự:</b> Giữ nguyên 3 ký tự đầu, các ký tự sau che mờ hết.
+          </p>
+          <div class="radio-group" style="margin-top: 2px;">
+            <label class="radio-item">
+              <input type="radio" name="starPadding" id="radioStarExact" checked />
+              <span>Độ dài dấu sao bằng số ký tự còn lại (ví dụ 7 ký tự → <code>abc****</code>)</span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" name="starPadding" id="radioStarFixed4" />
+              <span>Cố định 4 dấu sao (ví dụ → <code>abc****</code>)</span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PLAYGROUND TEST NHANH QUY TẮC -->
+      <div class="playground-box">
+        <span class="playground-label">⚡ Thử Nghiệm Quy Tắc Nhanh:</span>
+        <div class="playground-input-wrap">
+          <input type="text" class="playground-input" id="playgroundInput" placeholder="Nhập chữ hoặc số để test..." value="NguyenVanA" />
+          <span class="playground-arrow">➔</span>
+          <div class="playground-result" id="playgroundResult">Ngu******</div>
+        </div>
+        <div class="sample-pills">
+          <span style="font-size: 11.5px; color: var(--text-dim);">Mẫu thử:</span>
+          <span class="sample-pill" data-val="MB">"MB" (&lt;5)</span>
+          <span class="sample-pill" data-val="1234">"1234" (&lt;5)</span>
+          <span class="sample-pill" data-val="ABCDE">"ABCDE" (=5)</span>
+          <span class="sample-pill" data-val="0987654321">"0987654321" (&gt;5)</span>
+          <span class="sample-pill" data-val="abcdefgh">"abcdefgh" (&gt;5)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: TẢI FILE EXCEL HOẶC CSV (UPLOAD SECTION) -->
+    <section class="card-section">
+      <div class="section-title-row">
+        <h2 class="section-title">
+          <span>📁 Tải Lên File Excel Hoặc CSV Cần Che Mờ</span>
+        </h2>
+        <span class="section-badge">Hỗ Trợ .XLSX, .XLS, .CSV</span>
+      </div>
+
+      <!-- DROPZONE -->
+      <div class="dropzone-wrapper" id="dropzone">
+        <div class="dropzone-icon">📥</div>
+        <div class="dropzone-title">Kéo &amp; thả file Excel hoặc CSV vào đây</div>
+        <div class="dropzone-subtitle">hoặc bấm vào khung để duyệt file từ máy tính của bạn</div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" style="display: none;" />
+
+      <!-- FILE INFO BAR -->
+      <div class="file-info-bar" id="fileInfoBar" style="display: none;">
+        <div class="file-info-left">
+          <div class="file-badge-icon">📊</div>
+          <div class="file-name-meta">
+            <span class="file-name-text" id="fileNameDisplay">data.xlsx</span>
+            <span class="file-details-text" id="fileDetailsDisplay">Dung lượng: 0 KB | Định dạng: .XLSX</span>
+          </div>
+        </div>
+        <button class="btn-remove-file" id="btnRemoveFile">✕ Đổi file khác</button>
+      </div>
+
+      <!-- DANH SÁCH SHEET TRONG FILE EXCEL -->
+      <div class="sheet-selection-box" id="sheetSelectionBox" style="display: none;">
+        <div class="sheet-selection-header">
+          <span class="sheet-selection-title">
+            📑 Danh Sách Các Sheet Sẽ Được Che Mờ (Mặc định che tất cả các Sheet):
+          </span>
+          <button class="btn-secondary-action" id="btnSelectAllSheets" style="padding: 4px 10px; font-size: 11.5px;">
+            Chọn tất cả / Bỏ chọn
+          </button>
+        </div>
+        <div class="sheet-chips-container" id="sheetChipsContainer"></div>
+      </div>
+
+      <!-- ACTION BUTTONS ROW -->
+      <div class="action-buttons-row">
+        <button class="btn-mask-execute" id="btnExecuteMask" disabled>
+          <span>🚀 Thực Hiện Che Mờ Dữ Liệu</span>
+        </button>
+        <button class="btn-secondary-action" id="btnReset">
+          <span>🔄 Làm Mới / Hủy Bỏ</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- SECTION 3: THỐNG KÊ KẾT QUẢ (STATS BAR) -->
+    <section class="stats-summary-grid" id="statsGrid" style="display: none;">
+      <div class="stat-metric-card">
+        <div class="stat-metric-icon">📑</div>
+        <div class="stat-metric-info">
+          <span class="stat-metric-number" id="statSheets">0</span>
+          <span class="stat-metric-label">Sheet đã xử lý</span>
+        </div>
+      </div>
+      <div class="stat-metric-card">
+        <div class="stat-metric-icon">🔢</div>
+        <div class="stat-metric-info">
+          <span class="stat-metric-number" id="statRows">0</span>
+          <span class="stat-metric-label">Tổng số dòng dữ liệu</span>
+        </div>
+      </div>
+      <div class="stat-metric-card">
+        <div class="stat-metric-icon">🧩</div>
+        <div class="stat-metric-info">
+          <span class="stat-metric-number" id="statCells">0</span>
+          <span class="stat-metric-label">Tổng số ô dữ liệu</span>
+        </div>
+      </div>
+      <div class="stat-metric-card">
+        <div class="stat-metric-icon">🔒</div>
+        <div class="stat-metric-info">
+          <span class="stat-metric-number" id="statMasked">0</span>
+          <span class="stat-metric-label">Số ô đã được che mờ</span>
+        </div>
+      </div>
+      <div class="stat-metric-card">
+        <div class="stat-metric-icon">📊</div>
+        <div class="stat-metric-info">
+          <span class="stat-metric-number" id="statRatio">0%</span>
+          <span class="stat-metric-label">Tỷ lệ che mờ an toàn</span>
+        </div>
+      </div>
+      <div class="stat-metric-card">
+        <div class="stat-metric-icon">⏱️</div>
+        <div class="stat-metric-info">
+          <span class="stat-metric-number" id="statTime">0ms</span>
+          <span class="stat-metric-label">Thời gian thực thi</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: BẢNG XEM TRƯỚC DỮ LIỆU (PREVIEW CARD) -->
+    <section class="preview-card" id="previewCard" style="display: none;">
+      <!-- TOOLBAR XEM TRƯỚC -->
+      <div class="preview-toolbar">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <div class="view-tabs">
+            <button class="view-tab-btn active" id="tabMasked">🔒 Bảng Đã Che Mờ (Masked)</button>
+            <button class="view-tab-btn" id="tabOriginal">📄 Bảng Gốc Ban Đầu (Original)</button>
+          </div>
+          <span style="font-size: 12px; color: var(--text-dim);">(Các ô màu xanh ngọc là ô đã được che mờ thành công)</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <input type="text" class="preview-search-input" id="previewSearchInput" placeholder="🔍 Tìm kiếm trong bảng..." />
+        </div>
+      </div>
+
+      <!-- TABS CHUYỂN SHEET (NẾU CÓ NHIỀU SHEET) -->
+      <div class="sheet-tabs-bar" id="sheetTabsBar"></div>
+
+      <!-- KHUNG BẢNG SCROLLABLE -->
+      <div class="table-scroll-container" id="tableScrollContainer">
+        <table class="data-table">
+          <thead id="tableHead"></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- THANH PHÂN TRANG -->
+      <div class="table-pagination-bar">
+        <span id="paginationInfo">Hiển thị 0 - 0 của 0 dòng</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="pagination-btn" id="btnPrevPage" disabled>◀ Trang trước</button>
+          <button class="pagination-btn" id="btnNextPage" disabled>Trang sau ▶</button>
+          <select class="masker-select" id="selectPageSize" style="margin-left: 8px;">
+            <option value="15">15 dòng / trang</option>
+            <option value="25" selected>25 dòng / trang</option>
+            <option value="50">50 dòng / trang</option>
+            <option value="100">100 dòng / trang</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: XUẤT FILE ĐÃ CHE MỜ (EXPORT SECTION) -->
+    <section class="export-card" id="exportCard" style="display: none;">
+      <div class="export-info">
+        <span class="export-title">💾 Xuất File Đã Che Mờ Hoàn Chỉnh</span>
+        <span class="export-desc">Bảo toàn toàn bộ các sheet, định dạng và tên cột tiêu đề ban đầu. Dữ liệu nhạy cảm đã được che mờ an toàn.</span>
+      </div>
+      <div class="export-buttons-group">
+        <button class="btn-export-excel" id="btnExportExcel" disabled>
+          <span>📊 Tải File Excel (.xlsx) Toàn Bộ Sheet</span>
+        </button>
+        <button class="btn-export-csv" id="btnExportCsv" disabled>
+          <span>📄 Tải File CSV (.csv) Sheet Hiện Tại</span>
+        </button>
+        <button class="btn-copy-clipboard" id="btnCopyClipboard" disabled>
+          <span>📋 Sao Chép Bảng Đã Che (Clipboard)</span>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- TOAST NOTIFICATION -->
+  <div class="masker-toast" id="maskerToast"></div>
+
+  <!-- SCRIPT ENGINE CHO CÔNG CỤ -->
+  <script src="js/data-masker.js"></script>
+</body>
+
+</html>

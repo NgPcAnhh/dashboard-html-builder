@@ -1733,7 +1733,42 @@ ${userOutput}
    - Bổ sung \`toolbox: { feature: { saveAsImage: { title: 'Tải ảnh PNG' }, dataView: { readOnly: true }, restore: {} } }\`.
    - Nếu danh mục trục X dài hoặc nhiều hơn 6 mục, tự động xoay nhãn \`axisLabel: { interval: 0, rotate: 20 }\` hoặc thêm thanh trượt \`dataZoom\`.
 
-4. **ĐỊNH DẠNG ĐẦU RA BẮT BUỘC**:
+4. **BẮT BUỘC COMMENT ĐẦY ĐỦ ĐỂ DỄ BẢO TRÌ (CODE MAINTENANCE & CLEAN CODE)**:
+   - Mã nguồn BẮT BUỘC phải có comment tiếng Việt chi tiết, rõ ràng từng phân đoạn chức năng:
+     * // ==========================================
+     * // 1. TRÍCH XUẤT VÀ LÀM SẠCH DỮ LIỆU ĐẦU VÀO: Đọc mảng 'data', kiểm tra rỗng, ép kiểu Number an toàn.
+     * // 2. GOM NHÓM (AGGREGATE) & TÍNH TOÁN NGHIỆP VỤ: Diễn giải công thức tính toán (SUM, AVG, COUNT, tỷ lệ %), logic Map/Reduce, sắp xếp.
+     * // 3. THIẾT LẬP CẤU HÌNH OPTION ECHARTS: Chú thích màu sắc gradient, tooltip format tiền tệ VNĐ/%, trục X/Y, bo góc cột, toolbox.
+     * // 4. HIỆU ỨNG TƯƠNG TÁC CLICK & DRILL-DOWN (NẾU CÓ): Chú thích rõ cách bắt sự kiện click, chống double event, xử lý logic tương tác.
+   - Đặt tên biến tường minh, phản ánh đúng ý nghĩa nghiệp vụ (ví dụ: totalRevenue, salesByCategory, topBranches, categories), TUYỆT ĐỐI KHÔNG dùng tên tắt khó hiểu (a, b, t1, x).
+
+5. **QUY CHUẨN HIỆU ỨNG CLICK TƯƠNG TÁC TRÊN BIỂU ĐỒ (CHART CLICK EVENTS)**:
+   Khi biểu đồ có yêu cầu tương tác click hoặc khoan sâu (drill-down), BẮT BUỘC tuân thủ các quy tắc sau:
+   - Click vào phần tử dữ liệu (Cột, Lát bánh Pie, Điểm đường Line, Thanh ngang...):
+     * Dùng cú pháp:
+       \`\`\`javascript
+       // Chống nhân bản sự kiện (double firing) khi biểu đồ render lại hoặc khi lọc dữ liệu
+       if (myChart && myChart.off) {
+         myChart.off('click');
+         myChart.on('click', function(params) {
+           // params.name: nhãn danh mục (vd: "Hà Nội", "Miền Bắc", "Tháng 05")
+           // params.value: giá trị số liệu của phần tử
+           // params.seriesName: tên chuỗi dữ liệu
+           // params.dataIndex: chỉ số vị trí dữ liệu
+           console.log('Đã click vào phần tử:', params.name, params.value);
+           
+           // Xử lý logic tương tác (ví dụ: drill-down, hiển thị modal chi tiết, hoặc lọc dữ liệu)
+         });
+       }
+       \`\`\`
+   - Hiệu ứng thị giác khi di chuột & click (Visual Feedback):
+     * Đặt con trỏ chuột dạng bàn tay: Thêm \`cursor: 'pointer'\` trong cấu hình series hoặc \`myChart.getZr().setCursorStyle('pointer')\`.
+     * Highlight phần tử đang chọn: Có thể dùng \`selectedMode: 'single'\` trên series, hoặc gọi \`myChart.dispatchAction({ type: 'highlight', seriesIndex: params.seriesIndex, dataIndex: params.dataIndex })\`.
+   - Nút chức năng (Graphic Buttons):
+     * Dùng mảng \`graphic: [...] \` của ECharts với \`type: 'group'\`, bên trong có \`rect\` (nền nút) và \`text\` (chữ), gắn \`cursor: 'pointer'\` và sự kiện \`onclick: function() { ... }\` để chuyển đổi kiểu biểu đồ (Bar/Line) hoặc reset zoom.
+     * Hoặc dùng HTML DOM Overlay qua \`const dom = myChart.getDom();\` chèn thẻ button HTML thật có class CSS nổi góc trên.
+
+6. **ĐỊNH DẠNG ĐẦU RA BẮT BUỘC**:
    - BẮT BUỘC kết thúc bằng câu lệnh: \`return option;\` (hoặc gọi \`myChart.setOption(option);\`).
    - CHỈ TRẢ VỀ DUY NHẤT một khối mã JavaScript trong \`\`\`javascript ... \`\`\`.
    - KHÔNG viết lời chào hỏi, cảm ơn hay giải thích dài dòng bên ngoài khối mã.

@@ -83,6 +83,19 @@
       isPrimary: true,
       url: 'dashboard_builder.html',
       author: 'BI Analytics Engine'
+    },
+    {
+      id: 'excel-data-masker',
+      name: 'Che Mờ & Bảo Mật Dữ Liệu (Excel & CSV)',
+      category: 'data',
+      categoryLabel: 'Xử lý Dữ liệu',
+      icon: '🎭',
+      desc: 'Tự động che mờ (masking), ẩn thông tin nhạy cảm trên tất cả các sheet Excel hoặc CSV. Tùy chọn giữ nguyên dòng đầu làm Header, che mờ < 5 ký tự bằng *****, ô > 5 ký tự giữ 3 ký tự đầu và che mờ phần sau (ví dụ: abc****).',
+      tags: ['Excel', 'CSV', 'Che Mờ Dữ Liệu', 'Data Masking', 'Bảo Mật', 'Header Option'],
+      badge: 'Công Cụ 6 • Mới',
+      isPrimary: true,
+      url: 'data_masker.html',
+      author: 'Data Security Engine'
     }
   ];
 
